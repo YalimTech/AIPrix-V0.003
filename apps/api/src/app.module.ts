@@ -85,7 +85,7 @@ import { WebSocketModule } from './websocket/websocket.module';
     WebhooksModule,
     AudioProcessingModule,
     CampaignsModule,
-    ContactsModule,
+    // ContactsModule,
     CallsModule,
     KnowledgeModule,
     DashboardModule,
