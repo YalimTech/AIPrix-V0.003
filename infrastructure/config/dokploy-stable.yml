@@ -1,0 +1,108 @@
+version: "3.8"
+
+services:
+  # =====================================================
+  # APLICACIÓN PRINCIPAL ESTABILIZADA PARA DOKPLOY
+  # =====================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: prixagent-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+      - "3004:3004"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - API_PORT=3004
+      - DATABASE_URL=${DATABASE_URL}
+      - JWT_SECRET=${JWT_SECRET}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY}
+      - WEBHOOK_SIGNATURE_SECRET=${WEBHOOK_SIGNATURE_SECRET}
+      - PUBLIC_API_SECRET=${PUBLIC_API_SECRET}
+      
+      # Configuración de CORS y API
+      - CORS_ORIGIN=${CORS_ORIGIN}
+      - API_URL=${API_URL}
+      - APP_URL=${APP_URL}
+      
+      # Variables para Vite
+      - VITE_API_PROTOCOL=${VITE_API_PROTOCOL}
+      - VITE_API_HOST=${VITE_API_HOST}
+      - VITE_API_PORT=${VITE_API_PORT}
+      - VITE_APP_URL=${VITE_APP_URL}
+      
+      # Administrador
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - ADMIN_NAME=${ADMIN_NAME}
+      - ADMIN_ROLE=${ADMIN_ROLE}
+      - ADMIN_SECRET_KEY=${ADMIN_SECRET_KEY}
+
+      # ElevenLabs Configuration
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - ELEVENLABS_WEBHOOK_SECRET=${ELEVENLABS_WEBHOOK_SECRET}
+      - ELEVENLABS_BASE_URL=https://api.elevenlabs.io/v1
+
+      # GoHighLevel Configuration
+      - GHL_API_KEY=${GHL_API_KEY}
+      - GHL_WEBHOOK_SECRET=${GHL_WEBHOOK_SECRET}
+      - GHL_BASE_URL=https://services.leadconnectorhq.com
+      - GHL_API_VERSION=v2
+
+      # Twilio Configuration
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN}
+      - TWILIO_WEBHOOK_SECRET=${TWILIO_WEBHOOK_SECRET}
+
+      # PayPal Configuration
+      - PAYPAL_CLIENT_ID=${PAYPAL_CLIENT_ID}
+      - PAYPAL_CLIENT_SECRET=${PAYPAL_CLIENT_SECRET}
+      - PAYPAL_WEBHOOK_SECRET=${PAYPAL_WEBHOOK_SECRET}
+      - PAYPAL_BASE_URL=https://api.paypal.com/v1
+      - PAYPAL_SANDBOX_MODE=false
+
+      # Security Configuration
+      - ADMIN_EMAIL=${ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      - CORS_ORIGIN=${CORS_ORIGIN}
+      - RATE_LIMIT_TTL=60000
+      - RATE_LIMIT_MAX=100
+
+      # Monitoring
+      - SENTRY_DSN=${SENTRY_DSN}
+      - LOG_LEVEL=info
+
+      # Performance
+      - MAX_MEMORY_MB=2048
+      - MAX_CONNECTIONS=200
+
+    volumes:
+      - ./logs:/app/logs
+      - ./uploads:/app/uploads
+    networks:
+      - prixagent-network
+    # SIN HEALTH CHECK - Dejar que Dokploy maneje esto
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+          cpus: "4.0"
+        reservations:
+          memory: 4G
+          cpus: "2.0"
+
+  # =====================================================
+  # BASE DE DATOS EXTERNA (NO INCLUIDA EN DOKPLOY)
+  # =====================================================
+  # La base de datos debe estar en un servicio externo
+  # como PostgreSQL en la nube o un contenedor separado
+
+# =====================================================
+# REDES
+# =====================================================
+networks:
+  prixagent-network:
+    driver: bridge

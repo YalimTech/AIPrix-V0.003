@@ -1,0 +1,28 @@
+{
+  "name": "prixagent-production-tests",
+  "version": "1.0.0",
+  "description": "Production tests for PrixAgent SaaS application",
+  "main": "run-all-tests.js",
+  "scripts": {
+    "test": "node run-all-tests.js",
+    "test:quick": "node quick-test.js",
+    "test:api": "node api-production.test.js",
+    "test:dashboard": "node client-dashboard.test.js",
+    "diagnostic": "node ../scripts/diagnostic-production.js",
+    "optimize": "node ../scripts/optimize-production.js"
+  },
+  "keywords": [
+    "production",
+    "testing",
+    "optimization",
+    "saas",
+    "prixagent"
+  ],
+  "author": "PrixAgent Team",
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

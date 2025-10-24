@@ -1,0 +1,21 @@
+<svg width="120" height="32" viewBox="0 0 120 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <path d="M8 8C8 3.58172 11.5817 0 16 0H24C28.4183 0 32 3.58172 32 8V24C32 28.4183 28.4183 32 24 32H16C11.5817 32 8 28.4183 8 24V8Z" fill="url(#gradient1)"/>
+  <path d="M40 8C40 3.58172 43.5817 0 48 0H56C60.4183 0 64 3.58172 64 8V24C64 28.4183 60.4183 32 56 32H48C43.5817 32 40 28.4183 40 24V8Z" fill="url(#gradient2)"/>
+  <path d="M72 8C72 3.58172 75.5817 0 80 0H88C92.4183 0 96 3.58172 96 8V24C96 28.4183 92.4183 32 88 32H80C75.5817 32 72 28.4183 72 24V8Z" fill="url(#gradient3)"/>
+  
+  <defs>
+    <linearGradient id="gradient1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6366F1;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#8B5CF6;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="gradient2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#8B5CF6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#EC4899;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="gradient3" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#EC4899;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#F59E0B;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+</svg>
+

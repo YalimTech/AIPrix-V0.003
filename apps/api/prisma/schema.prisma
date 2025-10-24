@@ -1,0 +1,441 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "binary"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Account {
+  id                      String                   @id @default(cuid())
+  name                    String
+  email                   String                   @unique
+  balance                 Float                    @default(0.0)
+  status                  String                   @default("active")
+  createdAt               DateTime                 @default(now())
+  subscriptionPlan        String                   @default("basic")
+  updatedAt               DateTime                 @updatedAt
+  autoRefillAmount        Float                    @default(100.00)
+  autoRefillEnabled       Boolean                  @default(false)
+  autoRefillThreshold     Float                    @default(50.00)
+  billingEmail            String?
+  phone                   String?
+  slug                    String                   @unique
+  timezone                String                   @default("UTC")
+  accountCalcomConfigs    AccountCalcomConfig?
+  accountElevenLabsConfig AccountElevenLabsConfig?
+  accountGhlConfigs       AccountGhlConfig?
+  accountTwilioConfigs    AccountTwilioConfig?
+  agents                  Agent[]
+  calls                   Call[]
+  callAnalytics           CallAnalytics[]
+  campaigns               Campaign[]
+  contacts                Contact[]
+  contactLists            ContactList[]
+  conversationAnalyses    ConversationAnalysis[]
+  customVoices            CustomVoice[]
+  elevenLabsUsages        ElevenLabsUsage[]
+  errorLogs               ErrorLog[]
+  folders                 Folder[]
+  knowledgeBases          KnowledgeBase[]
+  paymentMethods          PaymentMethod[]
+  phoneNumbers            PhoneNumber[]
+  transactions            Transaction[]
+  users                   User[]
+  userPermissions         UserPermission[]
+}
+
+model User {
+  id                  String               @id @default(cuid())
+  email               String
+  role                String               @default("user")
+  status              String               @default("active")
+  accountId           String
+  createdAt           DateTime             @default(now())
+  firstName           String?
+  lastLoginAt         DateTime?
+  lastName            String?
+  passwordHash        String
+  updatedAt           DateTime             @updatedAt
+  passwordResetTokens PasswordResetToken[]
+  account             Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  userPermissions     UserPermission[]
+
+  @@unique([accountId, email], name: "accountId_email")
+  @@index([email], map: "idx_user_email")
+}
+
+model Agent {
+  id                        String     @id @default(cuid())
+  name                      String
+  description               String?
+  openingMessage            String?
+  type                      String     @default("inbound")
+  status                    String     @default("inactive")
+  temperature               Float      @default(0.7)
+  language                  String?
+  accountId                 String
+  createdAt                 DateTime   @default(now())
+  llmModel                  String     @default("gpt-4")
+  llmProvider               String     @default("openai")
+  maxTokens                 Int        @default(1000)
+  updatedAt                 DateTime   @updatedAt
+  voiceName                 String
+  fallbackProvider          String?
+  initialMessageDelay       Int?
+  preMadePrompt             String?
+  systemPrompt              String?
+  elevenLabsAgentId         String?
+  doubleCall                Boolean    @default(false)
+  vmDetection               Boolean    @default(false)
+  interruptSensitivity      Boolean    @default(false)
+  responseSpeed             Boolean    @default(true)
+  webhookUrl                String?
+  callTransferType          String?
+  callTransferPhoneNumber   String?
+  callTransferKeywords      String[]   @default([])
+  callTransferBusinessHours Boolean    @default(false)
+  calendarBookingEnabled    Boolean    @default(false)
+  calendarBookingProvider   String?
+  calendarBookingId         String?
+  calendarBookingTimezone   String?
+  elevenLabsAvatarUrl       String?
+  folderId                  String?
+  account                   Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  folder                    Folder?    @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  calls                     Call[]
+  campaigns                 Campaign[]
+}
+
+model Folder {
+  id          String    @id @default(cuid())
+  name        String
+  description String?
+  color       String?   @default("#3B82F6")
+  accountId   String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  account     Account   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  agents      Agent[]
+  
+  @@unique([accountId, name], name: "unique_folder_name_per_account")
+}
+
+model Campaign {
+  id              String       @id @default(cuid())
+  name            String
+  description     String?
+  status          String       @default("draft")
+  type            String       @default("outbound")
+  accountId       String
+  agentId         String
+  completedAt     DateTime?
+  createdAt       DateTime     @default(now())
+  failedCalls     Int          @default(0)
+  maxCallsPerHour Int          @default(10)
+  scheduledAt     DateTime?
+  startedAt       DateTime?
+  successfulCalls Int          @default(0)
+  totalCalls      Int          @default(0)
+  updatedAt       DateTime     @updatedAt
+  contactListId   String?
+  calls           Call[]
+  account         Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  agent           Agent        @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  contactList     ContactList? @relation(fields: [contactListId], references: [id])
+}
+
+model Contact {
+  id           String               @id @default(cuid())
+  name         String
+  phone        String
+  email        String?
+  company      String?
+  status       String               @default("active")
+  source       String               @default("manual")
+  notes        String?
+  accountId    String
+  createdAt    DateTime             @default(now())
+  lastName     String?
+  updatedAt    DateTime             @updatedAt
+  customFields Json?
+  position     String?
+  tags         String[]
+  calls        Call[]
+  account      Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  contactLists ContactListContact[]
+}
+
+model ContactList {
+  id          String               @id @default(cuid())
+  accountId   String
+  name        String
+  description String?
+  status      String               @default("active")
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  campaigns   Campaign[]
+  account     Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  contacts    ContactListContact[]
+}
+
+model ContactListContact {
+  id            String      @id @default(cuid())
+  contactListId String
+  contactId     String
+  addedAt       DateTime    @default(now())
+  contact       Contact     @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contactList   ContactList @relation(fields: [contactListId], references: [id], onDelete: Cascade)
+
+  @@unique([contactListId, contactId])
+}
+
+model PhoneNumber {
+  id                      String   @id @default(cuid())
+  number                  String   @unique
+  country                 String   @default("US")
+  type                    String   @default("local")
+  provider                String   @default("twilio")
+  status                  String   @default("active")
+  description             String?
+  accountId               String
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+  autoRefillAmount        Float?
+  autoRefillEnabled       Boolean  @default(false)
+  capabilities            String[]
+  config                  Json?
+  twilioAuthToken         String?
+  twilioSid               String?
+  appStatus               String   @default("inactive")
+  elevenLabsPhoneNumberId String?
+  calls                   Call[]
+  account                 Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+}
+
+model Call {
+  id                       String          @id @default(cuid())
+  status                   String          @default("initiated")
+  direction                String          @default("outbound")
+  type                     String          @default("campaign")
+  duration                 Int?
+  cost                     Float?
+  success                  Boolean?
+  transcript               String?
+  notes                    String?
+  accountId                String
+  agentId                  String
+  campaignId               String?
+  contactId                String?
+  createdAt                DateTime        @default(now())
+  endedAt                  DateTime?
+  phoneNumber              String
+  phoneNumberId            String?
+  recordingUrl             String?
+  startedAt                DateTime?
+  updatedAt                DateTime        @updatedAt
+  elevenLabsConversationId String?         @unique
+  account                  Account         @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  agent                    Agent           @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  campaign                 Campaign?       @relation(fields: [campaignId], references: [id])
+  contact                  Contact?        @relation(fields: [contactId], references: [id])
+  phoneNumberRef           PhoneNumber?    @relation(fields: [phoneNumberId], references: [id])
+  callAnalytics            CallAnalytics[]
+}
+
+model AccountTwilioConfig {
+  id         String   @id @default(cuid())
+  accountId  String   @unique
+  accountSid String
+  authToken  String
+  webhookUrl String?
+  status     String   @default("active")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+}
+
+model AccountCalcomConfig {
+  id            String   @id @default(cuid())
+  accountId     String   @unique
+  apiKey        String
+  webhookSecret String?
+  baseUrl       String   @default("https://api.cal.com/v1")
+  status        String   @default("active")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  account       Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+}
+
+model AccountGhlConfig {
+  id         String   @id @default(cuid())
+  accountId  String   @unique
+  apiKey     String
+  locationId String?
+  baseUrl    String   @default("https://rest.gohighlevel.com/v1")
+  status     String   @default("active")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+}
+
+model AccountElevenLabsConfig {
+  id        String   @id @default(cuid())
+  accountId String   @unique
+  apiKey    String
+  status    String   @default("active")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+}
+
+model UserPermission {
+  id         String   @id @default(cuid())
+  accountId  String
+  userId     String
+  permission String
+  resource   String?
+  action     String?
+  allowed    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([accountId, userId, permission, resource])
+  @@unique([userId, resource, permission], name: "userId_resource_action")
+  @@unique([userId, resource, permission, action], name: "userId_resource_permission_action")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ElevenLabsUsage {
+  id             String   @id @default(cuid())
+  accountId      String
+  characterCount Int
+  cost           Float
+  model          String
+  voiceId        String?
+  minutes        Float?   @default(0)
+  tokens         Int?     @default(0)
+  callId         String?
+  agentId        String?
+  timestamp      DateTime @default(now())
+  account        Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+}
+
+model KnowledgeBase {
+  id          String   @id @default(cuid())
+  accountId   String
+  name        String
+  title       String?
+  description String?
+  content     String?
+  type        String?  @default("document")
+  category    String?
+  tags        String[]
+  embedding   Json?
+  status      String   @default("active")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+}
+
+model ConversationAnalysis {
+  id             String   @id @default(cuid())
+  accountId      String
+  callId         String?
+  sentiment      String?
+  sentimentScore Float?
+  topics         String[]
+  keyTopics      String[]
+  summary        String?
+  transcript     String?
+  intent         String?
+  actionItems    String[]
+  insights       Json?
+  createdAt      DateTime @default(now())
+  account        Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+}
+
+model CallAnalytics {
+  id         String   @id @default(cuid())
+  callId     String
+  accountId  String
+  metrics    Json
+  transcript String?
+  sentiment  String?
+  createdAt  DateTime @default(now())
+  account    Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  call       Call     @relation(fields: [callId], references: [id], onDelete: Cascade)
+}
+
+model ErrorLog {
+  id        String   @id @default(cuid())
+  accountId String
+  level     String   @default("error")
+  message   String
+  stack     String?
+  context   Json?
+  metadata  Json?
+  category  String?
+  createdAt DateTime @default(now())
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+}
+
+model Transaction {
+  id          String   @id @default(cuid())
+  accountId   String
+  type        String
+  amount      Float
+  description String
+  status      String   @default("pending")
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model PaymentMethod {
+  id        String   @id @default(cuid())
+  accountId String
+  type      String
+  lastFour  String
+  brand     String
+  isDefault Boolean  @default(false)
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([isDefault])
+}
+
+model CustomVoice {
+  id        String   @id @default(cuid())
+  accountId String
+  name      String
+  config    Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  account   Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+  @@index([createdAt])
+}
