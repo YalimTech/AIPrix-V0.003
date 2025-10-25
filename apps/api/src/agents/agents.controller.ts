@@ -644,4 +644,51 @@ export class AgentsController {
       req.accountId,
     );
   }
+
+  /**
+   * Crear un agente inbound específicamente configurado para recibir llamadas
+   */
+  @Post('inbound')
+  @HttpCode(HttpStatus.CREATED)
+  createInboundAgent(
+    @Body() createInboundAgentDto: {
+      name: string;
+      description?: string;
+      systemPrompt: string;
+      openingMessage: string;
+      voiceName: string;
+      language: string;
+      temperature?: number;
+      phoneNumber?: string;
+    },
+    @Request() req,
+  ) {
+    return this.agentsService.createInboundAgent(req.accountId, createInboundAgentDto);
+  }
+
+  /**
+   * Obtener todos los agentes inbound
+   */
+  @Get('inbound')
+  @HttpCode(HttpStatus.OK)
+  getInboundAgents(@Request() req) {
+    return this.agentsService.getInboundAgents(req.accountId);
+  }
+
+  /**
+   * Configurar un agente inbound para recibir llamadas
+   */
+  @Post('inbound/:agentId/configure-calling')
+  @HttpCode(HttpStatus.OK)
+  configureInboundCalling(
+    @Param('agentId') agentId: string,
+    @Body() body: { phoneNumber: string },
+    @Request() req,
+  ) {
+    return this.agentsService.configureInboundCalling(
+      req.accountId,
+      agentId,
+      body.phoneNumber,
+    );
+  }
 }

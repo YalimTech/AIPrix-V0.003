@@ -13,30 +13,6 @@ export class UsersService {
   constructor(private readonly prisma: PrismaService) {}
 
   async create(createUserDto: CreateUserDto) {
-    // Si es el super admin creando un usuario, crear un account real primero
-    if (createUserDto.accountId === process.env.SUPER_ADMIN_EMAIL) {
-      // Verificar si ya existe un account para el super admin
-      let account = await this.prisma.account.findFirst({
-        where: { email: process.env.SUPER_ADMIN_EMAIL },
-      });
-
-      if (!account) {
-        // Crear el account del super admin
-        account = await this.prisma.account.create({
-          data: {
-            name: process.env.SUPER_ADMIN_NAME || 'Super Admin Account',
-            email: process.env.SUPER_ADMIN_EMAIL,
-            slug: `super-admin-${Date.now()}`,
-            status: 'active',
-            subscriptionPlan: 'super_admin',
-          },
-        });
-        console.log('✅ Account del super admin creado:', account.id);
-      }
-
-      // Usar el account real en lugar del email
-      createUserDto.accountId = account.id;
-    }
 
     const existingUser = await this.prisma.user.findFirst({
       where: {
@@ -88,19 +64,7 @@ export class UsersService {
   }
 
   async findAll(accountId: string) {
-    // Si es el super admin, buscar usuarios de su account real
-    let realAccountId = accountId;
-    if (accountId === process.env.SUPER_ADMIN_EMAIL) {
-      const account = await this.prisma.account.findFirst({
-        where: { email: process.env.SUPER_ADMIN_EMAIL },
-      });
-      if (account) {
-        realAccountId = account.id;
-      } else {
-        // Si no existe el account, devolver array vacío
-        return [];
-      }
-    }
+    const realAccountId = accountId;
 
     const users = await this.prisma.user.findMany({
       where: { accountId: realAccountId },

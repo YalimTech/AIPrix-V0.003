@@ -177,10 +177,8 @@ export class AuthController {
         role: adminRole,
       },
       rawEnv: {
-        SUPER_ADMIN_EMAIL: process.env.SUPER_ADMIN_EMAIL,
-        SUPER_ADMIN_PASSWORD: process.env.SUPER_ADMIN_PASSWORD
-          ? 'Presente'
-          : 'Ausente',
+        SUPER_ADMIN_EMAIL: '',
+        SUPER_ADMIN_PASSWORD: 'Ausente',
         SUPER_ADMIN_NAME: process.env.SUPER_ADMIN_NAME,
         SUPER_ADMIN_ROLE: process.env.SUPER_ADMIN_ROLE,
       },

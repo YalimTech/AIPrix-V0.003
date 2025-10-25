@@ -10,6 +10,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { setImmediate } from 'timers';
 import { TwilioSignatureValidationService } from './twilio-signature-validation.service';
+import { WebhooksService } from '../../webhooks/webhooks.service';
 
 @Controller('webhooks')
 export class TwilioWebhooksController {
@@ -18,6 +19,7 @@ export class TwilioWebhooksController {
   constructor(
     private readonly signatureValidation: TwilioSignatureValidationService,
     private readonly configService: ConfigService,
+    private readonly webhooksService: WebhooksService,
   ) {}
 
   /**
@@ -65,8 +67,18 @@ export class TwilioWebhooksController {
       };
 
       // Procesar en background para no bloquear la respuesta
-      setImmediate(() => {
-        this.processWebhookData(body);
+      setImmediate(async () => {
+        try {
+          // Procesar webhook de voz usando el servicio de webhooks
+          const twiMLResponse = await this.webhooksService.processTwilioVoiceWebhook(body);
+          
+          // Si hay una respuesta TwiML, la devolvemos
+          if (twiMLResponse) {
+            this.logger.log('TwiML response generated for inbound call');
+          }
+        } catch (error) {
+          this.logger.error('Error processing voice webhook:', error);
+        }
       });
 
       return response;

@@ -14,6 +14,7 @@ import {
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AccountGuard } from '../tenancy/account.guard';
+import { Public } from '../auth/decorators/public.decorator';
 import { ContactsService } from './contacts.service';
 import { ImportContactsDto } from './dto/contact.dto';
 import { CreateContactDto } from './dto/create-contact.dto';
@@ -141,4 +142,5 @@ export class ContactsController {
   getContactsByList(@Param('listId') listId: string, @Request() req) {
     return this.contactsService.getContactsByList(listId, req.user.accountId);
   }
+
 }

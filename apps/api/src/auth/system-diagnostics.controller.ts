@@ -15,8 +15,8 @@ export class SystemDiagnosticsController {
       nodeEnv: process.env.NODE_ENV,
       databaseUrl: !!process.env.DATABASE_URL,
       jwtSecret: !!process.env.JWT_SECRET,
-      superAdminEmail: process.env.SUPER_ADMIN_EMAIL,
-      superAdminPassword: !!process.env.SUPER_ADMIN_PASSWORD,
+      superAdminEmail: '',
+      superAdminPassword: false,
       superAdminName: process.env.SUPER_ADMIN_NAME,
       superAdminRole: process.env.SUPER_ADMIN_ROLE,
       superAdminSecretKey: !!process.env.SUPER_ADMIN_SECRET_KEY,
@@ -47,8 +47,8 @@ export class SystemDiagnosticsController {
       console.log(`🔍 Simple login test for: ${body.email}`);
       
       // Verificar variables de entorno
-      const adminEmail = this.configService.get<string>('SUPER_ADMIN_EMAIL');
-      const adminPassword = this.configService.get<string>('SUPER_ADMIN_PASSWORD');
+      const adminEmail = '';
+      const adminPassword = '';
       
       console.log(`🔍 Admin email from config: ${adminEmail}`);
       console.log(`🔍 Admin password exists: ${!!adminPassword}`);

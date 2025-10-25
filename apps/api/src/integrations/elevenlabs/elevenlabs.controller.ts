@@ -52,41 +52,42 @@ export class ElevenLabsController {
 
   // ===== ENDPOINTS DE AGENTS PLATFORM (2025) =====
 
-  @Get('agents')
-  async getAgents(
-    @Query('page_size') pageSize?: string,
-    @Query('search') search?: string,
-    @Query('sort_direction') sortDirection?: 'asc' | 'desc',
-    @Query('sort_by') sortBy?: 'name' | 'created_at',
-    @Query('cursor') cursor?: string,
-    @Request() req?,
-  ) {
-    const params: any = {};
-
-    if (pageSize) {
-      const size = parseInt(pageSize, 10);
-      if (!isNaN(size) && size >= 1 && size <= 100) {
-        params.page_size = size;
+  @Get('debug/agents')
+  async debugGetAgents(@Request() req) {
+    try {
+      this.logger.log(`[DEBUG] Consultando agentes para accountId: ${req.user.accountId}`);
+      
+      const config = await this.elevenLabsService.getConfig(req.user.accountId);
+      if (!config?.apiKey) {
+        return {
+          error: 'No se encontró configuración de ElevenLabs',
+          accountId: req.user.accountId,
+          apiKey: null
+        };
       }
-    }
 
-    if (search) {
-      params.search = search;
+      const agents = await this.elevenLabsService.getAgents(req.user.accountId);
+      
+      return {
+        success: true,
+        accountId: req.user.accountId,
+        apiKey: config.apiKey.substring(0, 8) + '...',
+        totalAgents: agents.agents.length,
+        agents: agents.agents.map(agent => ({
+          agent_id: agent.agent_id,
+          name: agent.name,
+          created_at: agent.created_at_unix_secs ? new Date(agent.created_at_unix_secs * 1000).toISOString() : 'N/A',
+          tags: agent.tags || []
+        }))
+      };
+    } catch (error) {
+      this.logger.error('[DEBUG] Error consultando agentes:', error.message);
+      return {
+        error: error.message,
+        accountId: req.user.accountId,
+        stack: error.stack
+      };
     }
-
-    if (sortDirection) {
-      params.sort_direction = sortDirection;
-    }
-
-    if (sortBy) {
-      params.sort_by = sortBy;
-    }
-
-    if (cursor) {
-      params.cursor = cursor;
-    }
-
-    return this.elevenLabsService.getAgents(req.user.accountId, params);
   }
 
   @Post('agents')
@@ -366,6 +367,17 @@ export class ElevenLabsController {
     @Request() req,
   ) {
     return this.elevenLabsService.getConversationAudio(
+      req.user.accountId,
+      conversationId,
+    );
+  }
+
+  @Get('conversations/:id/metadata')
+  async getConversationMetadata(
+    @Param('id') conversationId: string,
+    @Request() req,
+  ) {
+    return this.elevenLabsService.getConversationMetadata(
       req.user.accountId,
       conversationId,
     );
@@ -835,6 +847,86 @@ export class ElevenLabsController {
       return {
         success: false,
         message: `Error creando test de agente: ${error.message}`,
+      };
+    }
+  }
+
+  @Get('test-connection')
+  @UseGuards(JwtAuthGuard)
+  async testConnection(@Request() req) {
+    try {
+      const accountId = req.user.accountId;
+      
+      this.logger.log(`🔍 Probando conexión con ElevenLabs para cuenta ${accountId}`);
+      
+      // Verificar configuración
+      const config = await this.elevenLabsService.getConfig(accountId);
+      if (!config.apiKey) {
+        return {
+          success: false,
+          message: 'No hay API key configurada para ElevenLabs',
+          hasApiKey: false,
+        };
+      }
+
+      // Probar conexión obteniendo agentes
+      const agents = await this.elevenLabsService.getAgents(accountId);
+      
+      return {
+        success: true,
+        message: 'Conexión con ElevenLabs exitosa',
+        hasApiKey: true,
+        agentsCount: agents.agents.length,
+        accountId,
+      };
+    } catch (error) {
+      this.logger.error(`❌ Error probando conexión con ElevenLabs:`, error);
+      return {
+        success: false,
+        message: `Error de conexión: ${error.message}`,
+        hasApiKey: false,
+        error: error.response?.data || error.message,
+      };
+    }
+  }
+
+  @Post('test-create-agent')
+  @UseGuards(JwtAuthGuard)
+  async testCreateAgent(@Request() req) {
+    try {
+      const accountId = req.user.accountId;
+      
+      this.logger.log(`🧪 Probando creación de agente de prueba en ElevenLabs para cuenta ${accountId}`);
+      
+      // Crear agente de prueba
+      const testAgent = await this.elevenLabsService.createAgent(accountId, {
+        name: `Test Agent ${Date.now()}`,
+        systemPrompt: 'Eres un agente de prueba para verificar la conexión con ElevenLabs.',
+        firstMessage: 'Hola, soy un agente de prueba.',
+        language: 'es',
+        temperature: 0.7,
+        voiceId: 'pNInz6obpgDQGcFmaJgB', // Voz por defecto
+        interruptSensitivity: false,
+        responseSpeed: false,
+        initialMessageDelay: 0,
+        llmModel: 'gpt-4o-mini',
+        maxTokens: 1000,
+        doubleCall: false,
+        vmDetection: false,
+      });
+
+      return {
+        success: true,
+        message: 'Agente de prueba creado exitosamente en ElevenLabs',
+        agentId: testAgent.agent_id,
+        accountId,
+      };
+    } catch (error) {
+      this.logger.error(`❌ Error creando agente de prueba:`, error);
+      return {
+        success: false,
+        message: `Error creando agente de prueba: ${error.message}`,
+        error: error.response?.data || error.message,
       };
     }
   }

@@ -19,8 +19,8 @@ export class AuthenticationController {
       const normalizedEmail = body.email.trim().toLowerCase();
       
       // Verificar super admin primero
-      const adminEmail = this.configService.get<string>('SUPER_ADMIN_EMAIL');
-      const adminPassword = this.configService.get<string>('SUPER_ADMIN_PASSWORD');
+      const adminEmail = '';
+      const adminPassword = '';
       
       if (normalizedEmail === adminEmail && body.password === adminPassword) {
         console.log(`✅ Super admin login successful for: ${normalizedEmail}`);

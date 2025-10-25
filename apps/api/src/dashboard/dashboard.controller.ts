@@ -479,6 +479,15 @@ export class DashboardController {
               `   - transcript array: ${transcriptArray ? `${transcriptArray.length} mensajes` : 'No disponible'}`,
             );
 
+            if (transcriptArray && Array.isArray(transcriptArray) && transcriptArray.length > 0) {
+              this.logger.log(
+                `   - Primer mensaje completo: ${JSON.stringify(transcriptArray[0], null, 2)}`,
+              );
+              this.logger.log(
+                `   - Segundo mensaje completo: ${JSON.stringify(transcriptArray[1], null, 2)}`,
+              );
+            }
+
             if (transcriptSummary) {
               this.logger.log(
                 `   - transcript_summary content: ${transcriptSummary.substring(0, 100)}...`,
@@ -533,24 +542,91 @@ export class DashboardController {
               // Priorizar transcripción completa sobre resumen
               if (
                 conv.details?.transcript &&
-                Array.isArray(conv.details.transcript)
+                Array.isArray(conv.details.transcript) &&
+                conv.details.transcript.length > 0
               ) {
                 // Construir transcripción completa desde el array de mensajes
-                finalTranscript = conv.details.transcript
-                  .map((t: any) => {
-                    const speaker = t.speaker === 'user' ? 'Usuario' : 'Agente';
-                    const message = t.message || t.text || '';
-                    return `${speaker}: ${message}`;
+                // ORDENAR mensajes por timestamp si está disponible para mantener orden cronológico
+                const sortedTranscript = [...conv.details.transcript].sort((a, b) => {
+                  const timeA = a.timestamp || a.start_time || 0;
+                  const timeB = b.timestamp || b.start_time || 0;
+                  return timeA - timeB;
+                });
+
+                // Función helper para convertir segundos a formato MM:SS
+                const formatTimestamp = (seconds: number): string => {
+                  const mins = Math.floor(seconds / 60);
+                  const secs = Math.floor(seconds % 60);
+                  return `${mins}:${secs.toString().padStart(2, '0')}`;
+                };
+
+                finalTranscript = sortedTranscript
+                  .map((t: any, index: number) => {
+                    // Log detallado de cada mensaje para debugging
+                    this.logger.log(
+                      `🔍 [Debug] Procesando mensaje ${index + 1}:`,
+                      JSON.stringify(t, null, 2),
+                    );
+
+                    // Intentar obtener el speaker de diferentes campos posibles
+                    let speaker = 'Usuario';
+                    if (t.speaker === 'user' || t.speaker === 'user_input' || t.speaker === 'User') {
+                      speaker = 'Usuario';
+                    } else if (t.speaker === 'agent' || t.speaker === 'agent_output' || t.speaker === 'Agent') {
+                      speaker = 'Agente';
+                    } else if (t.speaker) {
+                      speaker = t.speaker;
+                    }
+                    
+                    const message = t.message || t.text || t.transcript || t.content || '';
+                    
+                    // Intentar obtener timestamp de diferentes campos posibles
+                    let timestamp = t.timestamp || t.start_time || t.time || t.offset || t.start_time_unix_secs;
+                    
+                    // SOLO usar timestamp real de ElevenLabs, NO inventar datos
+                    if (timestamp === undefined || timestamp === null || timestamp === 0) {
+                      // Si no hay timestamp real, omitir el timestamp en lugar de inventarlo
+                      this.logger.warn(
+                        `⚠️ No hay timestamp disponible para mensaje ${index + 1}, omitiendo timestamp`,
+                      );
+                      return `${speaker}: ${message}`;
+                    }
+                    
+                    // Convertir a segundos si está en milisegundos
+                    if (timestamp > 1000000000) { // Probablemente en milisegundos o unix timestamp
+                      // Si es un timestamp Unix muy grande, es milisegundos
+                      if (timestamp > 1600000000000 && timestamp < 3000000000000) {
+                        timestamp = timestamp / 1000;
+                      } else {
+                        // Es un timestamp Unix en segundos, extraer solo los segundos desde el inicio
+                        // Necesitamos el start_time_unix_secs del inicio de la llamada
+                        const callStartTime = conv.start_time_unix_secs || conv.details?.metadata?.start_time_unix_secs;
+                        if (callStartTime) {
+                          timestamp = timestamp - callStartTime;
+                        }
+                      }
+                    }
+                    
+                    // Convertir a formato MM:SS
+                    const timeStr = formatTimestamp(timestamp);
+                    return `[${timeStr}] ${speaker}: ${message}`;
                   })
-                  .join('\n');
+                  .join('\n\n'); // Separar mensajes con doble salto de línea para legibilidad
+                
                 this.logger.log(
-                  `📝 [Debug] Transcripción completa extraída desde transcript array: ${finalTranscript.length} caracteres`,
+                  `📝 [Debug] Transcripción completa extraída desde transcript array: ${finalTranscript.length} caracteres, ${sortedTranscript.length} mensajes`,
+                );
+                this.logger.log(
+                  `📝 [Debug] Primeros 500 caracteres de la transcripción final: ${finalTranscript.substring(0, 500)}`,
                 );
               } else if (conv.details?.analysis?.transcript_summary) {
                 // Si no hay transcripción completa, usar el resumen como fallback
                 finalTranscript = conv.details.analysis.transcript_summary;
                 this.logger.log(
                   `📝 [Debug] Usando transcript_summary como fallback: ${finalTranscript.length} caracteres`,
+                );
+                this.logger.warn(
+                  `⚠️ [Debug] Transcripción completa no disponible, usando resumen para ${conv.conversation_id}`,
                 );
               } else if (conv.transcript_summary) {
                 finalTranscript = conv.transcript_summary;
@@ -561,6 +637,10 @@ export class DashboardController {
                 finalTranscript = conv.transcript;
                 this.logger.log(
                   `📝 [Debug] Usando transcript del nivel superior: ${finalTranscript.length} caracteres`,
+                );
+              } else {
+                this.logger.warn(
+                  `⚠️ [Debug] No hay transcripción disponible para ${conv.conversation_id}`,
                 );
               }
             } catch (transcriptError) {
@@ -615,12 +695,8 @@ export class DashboardController {
                 conv.recordingUrl ||
                 `${process.env.APP_URL || `${process.env.API_PROTOCOL || 'http'}://${process.env.API_HOST || 'localhost'}:${process.env.API_PORT || '3004'}`}/api/v1/audio/${conv.conversation_id}?accountId=${req.user.accountId}` ||
                 null,
-              transcript:
-                conv.details?.analysis?.transcript_summary ||
-                conv.details?.transcript?.map((t) => t.message).join(' ') ||
-                conv.transcript_summary ||
-                conv.transcript ||
-                '',
+              transcript: finalTranscript, // Usar la transcripción completa extraída
+              transcriptLength: finalTranscript ? finalTranscript.length : 0, // Agregar longitud para debugging
               hasAudio: conv.hasAudio || false,
               callSuccessful:
                 conv.call_successful === 'success' ? 'success' : 'failure',
@@ -630,7 +706,39 @@ export class DashboardController {
               // Información adicional para debugging
               messageCount: conv.message_count || 0,
               hasConversation,
-              callType, // 'inbound' o 'outbound'
+              callType,
+              // Métricas y metadatos adicionales de ElevenLabs
+              metadata: {
+                // Costos (convertir de centavos a dólares)
+                cost: conv.details?.metadata?.cost ? conv.details.metadata.cost / 100 : (conv.cost ? conv.cost / 100 : null),
+                llmTotalCost: conv.details?.metadata?.charging?.llm_price || null,
+                costPerMinute: conv.details?.metadata?.cost_per_minute ? conv.details.metadata.cost_per_minute / 100 : null,
+                // Tokens usados (sumar input y output de todas las generaciones)
+                tokensUsed: (() => {
+                  const llmUsage = conv.details?.metadata?.charging?.llm_usage;
+                  if (llmUsage) {
+                    let totalTokens = 0;
+                    // Sumar tokens de irreversible_generation
+                    if (llmUsage.irreversible_generation?.model_usage) {
+                      Object.values(llmUsage.irreversible_generation.model_usage).forEach((model: any) => {
+                        totalTokens += (model.input?.tokens || 0) + (model.output_total?.tokens || 0);
+                      });
+                    }
+                    // Sumar tokens de initiated_generation
+                    if (llmUsage.initiated_generation?.model_usage) {
+                      Object.values(llmUsage.initiated_generation.model_usage).forEach((model: any) => {
+                        totalTokens += (model.input?.tokens || 0) + (model.output_total?.tokens || 0);
+                      });
+                    }
+                    return totalTokens;
+                  }
+                  return conv.details?.metadata?.tokens_used || conv.tokens_used || null;
+                })(),
+                // Duración real
+                callDuration: conv.details?.metadata?.call_duration_secs || conv.call_duration_secs || conv.duration || null,
+                // Información completa de los detalles
+                fullDetails: conv.details || {},
+              }, // 'inbound' o 'outbound'
               callStatus, // 'answered' o 'no_answer'
             };
           })
@@ -639,6 +747,14 @@ export class DashboardController {
         this.logger.log(
           `✅ Obtenidas ${elevenLabsConversations.length} conversaciones de ElevenLabs con detalles completos`,
         );
+        
+        // Log de ejemplo de los metadatos enviados
+        if (elevenLabsConversations.length > 0) {
+          this.logger.log(
+            `📊 Ejemplo de metadatos enviados para la primera conversación:`,
+            JSON.stringify(elevenLabsConversations[0].metadata, null, 2),
+          );
+        }
       } catch (elevenLabsError) {
         this.logger.warn(
           `ElevenLabs no configurado o _error para este cliente ${accountId}:`,
@@ -790,7 +906,7 @@ export class DashboardController {
       };
 
       // Si es el super admin, devolver información virtual
-      const adminEmail = process.env.SUPER_ADMIN_EMAIL;
+      const adminEmail = '';
       if (req.user.sub === adminEmail) {
         return {
           id: req.user.sub,

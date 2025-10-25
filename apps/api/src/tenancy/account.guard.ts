@@ -29,7 +29,7 @@ export class AccountGuard implements CanActivate {
     }
 
     // Si es el super admin, permitir acceso sin validación de tenant
-    const adminEmail = process.env.SUPER_ADMIN_EMAIL;
+    const adminEmail = '';
     if (user.sub === adminEmail) {
       // Crear un account virtual para el super admin
       request.account = {

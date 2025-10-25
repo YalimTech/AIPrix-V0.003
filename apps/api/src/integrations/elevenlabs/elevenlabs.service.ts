@@ -702,7 +702,7 @@ export class ElevenLabsService {
     firstMessage: string,
     language: string = 'es',
     temperature: number = 0.7,
-    _maxDuration: number = 300,
+    _maxDuration: number = 1800, // 30 minutos por defecto
     voiceId?: string,
     interruptSensitivity?: boolean,
     responseSpeed?: boolean,
@@ -730,30 +730,33 @@ export class ElevenLabsService {
       'gemini-1.5-flash'
     ];
 
-    // Usar modelo LLM proporcionado o default
+    // Usar modelo LLM proporcionado o default (Gemini 2.5 Flash es el default)
     const selectedLLM = llmModel && supportedLLMModels.includes(llmModel) 
       ? llmModel 
-      : 'gpt-4o-mini';
+      : 'gemini-2.5-flash';
 
     // Construir la estructura completa del conversation_config según documentación oficial de ElevenLabs
+    // Documentación: https://elevenlabs.io/docs/api-reference/agents-platform/update-agent
     return {
       tts: {
-        voiceId: voiceId,
-        agentOutputAudioFormat: 'ulaw_8000',
-        model_id: ttsModel
+        voice_id: voiceId,
+        model_id: ttsModel,
+        agent_output_audio_format: 'pcm_8000', // Formato correcto según documentación
       },
       conversation: {
-        maxDurationSeconds: 900
+        max_duration_seconds: _maxDuration || 1800, // 30 minutos por defecto (1800 segundos)
       },
       agent: {
-        firstMessage: firstMessage || 'Hola, ¿en qué puedo ayudarte?',
+        first_message: firstMessage || 'Hola, ¿en qué puedo ayudarte?',
         language: language,
+        // CRÍTICO: El prompt es un objeto anidado según documentación oficial
         prompt: {
           prompt: systemPrompt || 'Eres un asistente telefónico profesional.',
-          rag: { enabled: false },
-          knowledgeBase: []
-        }
-      }
+          llm: selectedLLM, // Modelo LLM
+          temperature: temperature || 0,
+          max_tokens: maxTokens || -1,
+        },
+      },
     };
   }
 
@@ -870,6 +873,14 @@ export class ElevenLabsService {
         `[createAgent] Creando agente en ElevenLabs con payload:`,
         JSON.stringify(payload, null, 2),
       );
+      
+      // Log específico para el mensaje inicial
+      this.logger.log(
+        `[createAgent] Mensaje inicial enviado: "${agentData.firstMessage || 'NO PROPORCIONADO'}"`,
+      );
+      this.logger.log(
+        `[createAgent] conversation_config.agent.firstMessage: "${conversationConfig.agent?.firstMessage || 'NO ENCONTRADO'}"`,
+      );
 
       // Usar el endpoint correcto según documentación oficial
       const response = await axios.post(
@@ -886,6 +897,12 @@ export class ElevenLabsService {
       const result = response.data;
 
       this.logger.log(`Agente creado con ID: ${result.agent_id}`);
+      
+      // Log de la respuesta completa para verificar qué devuelve ElevenLabs
+      this.logger.log(
+        `[createAgent] Respuesta completa de ElevenLabs:`,
+        JSON.stringify(result, null, 2),
+      );
 
       // Retornar según documentación oficial
       return {
@@ -1490,28 +1507,37 @@ export class ElevenLabsService {
         updatePayload.name = updateData.name;
       }
 
-      // Solo construir conversation_config si hay datos del prompt
-      if (updateData.systemPrompt) {
-        this.logger.log(
-          '[updateAgent] Construyendo conversation_config según documentación oficial',
-        );
+      // Construir conversation_config según documentación oficial ElevenLabs 2025
+      this.logger.log(
+        '[updateAgent] Construyendo conversation_config según documentación oficial',
+      );
 
-        // Estructura correcta según documentación oficial ElevenLabs 2025
-        updatePayload.conversation_config = {
-          agent: {
-            prompt: updateData.systemPrompt, // Prompt directamente como string
-            first_message:
-              updateData.firstMessage || 'Hola, ¿en qué puedo ayudarte?',
-            language: (updateData.language || 'es').toLowerCase(),
+      // Estructura CORRECTA según documentación oficial ElevenLabs 2025
+      // Documentación: https://elevenlabs.io/docs/api-reference/agents-platform/update-agent
+      // IMPORTANTE: El endpoint PATCH actualiza parcialmente, pero conversation_config debe enviarse completo
+      updatePayload.conversation_config = {
+        // Configuración de Text-to-Speech (TTS)
+        tts: {
+          voice_id: updateData.voiceId,
+          model_id: 'eleven_turbo_v2', // Modelo recomendado para agentes
+        },
+        // Configuración de conversación
+        conversation: {
+          max_duration_seconds: 1800, // 30 minutos máximo (documentación usa max_duration_seconds en conversation)
+        },
+        // Configuración del agente
+        agent: {
+          first_message: updateData.firstMessage || 'Hola, ¿en qué puedo ayudarte?',
+          language: (updateData.language || 'es').toLowerCase(),
+          // CRÍTICO: El prompt es un objeto, no un string directo
+          prompt: {
+            prompt: updateData.systemPrompt || 'Eres un asistente telefónico profesional y amigable.',
+            llm: 'gemini-2.5-flash',
+            temperature: updateData.temperature || 0,
+            max_tokens: (updateData as any).maxTokens || -1,
           },
-          tts: {
-            voice_id: updateData.voiceId || 'cjVigY5qzO86Huf0OWal',
-            model_id: 'eleven_turbo_v2',
-            stability: 0.5,
-            similarity_boost: 0.8,
-          },
-        };
-      }
+        },
+      };
 
       // Solo incluir platform_settings si se proporciona explícitamente
       if (updateData.platform_settings) {
@@ -1537,6 +1563,31 @@ export class ElevenLabsService {
       this.logger.log(
         `[updateAgent] URL: https://api.elevenlabs.io/v1/convai/agents/${agentId}`,
       );
+
+      // Log detallado antes de la llamada
+      this.logger.log(`[updateAgent] Realizando llamada a ElevenLabs API...`);
+      this.logger.log(`[updateAgent] URL: https://api.elevenlabs.io/v1/convai/agents/${agentId}`);
+      this.logger.log(`[updateAgent] Headers:`, {
+        'xi-api-key': config.apiKey.substring(0, 10) + '...',
+        'Content-Type': 'application/json',
+      });
+      this.logger.log(`[updateAgent] Payload final:`, JSON.stringify(updatePayload, null, 2));
+      
+      // Log de los datos de entrada
+      this.logger.log(`[updateAgent] Datos de entrada:`, JSON.stringify(updateData, null, 2));
+      this.logger.log(`[updateAgent] Account ID: ${accountId}`);
+      this.logger.log(`[updateAgent] Agent ID: ${agentId}`);
+
+      // Validar que el payload tenga la estructura correcta
+      if (!updatePayload.conversation_config?.agent?.prompt?.prompt) {
+        throw new BadRequestException('El prompt del agente es requerido');
+      }
+
+      if (!updatePayload.conversation_config?.tts?.voice_id) {
+        throw new BadRequestException('El voice_id es requerido');
+      }
+
+      this.logger.log(`[updateAgent] Payload validado correctamente`);
 
       const response = await axios.patch(
         `https://api.elevenlabs.io/v1/convai/agents/${agentId}`,
@@ -1580,11 +1631,45 @@ export class ElevenLabsService {
         method: error.config?.method,
         headers: error.config?.headers,
       });
+      
+      // Log específico del error de ElevenLabs
+      this.logger.error(`[updateAgent] Error específico de ElevenLabs:`, {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        message: error.message,
+        url: error.config?.url,
+        payload: updatePayload,
+      });
+      
+      // Log del error completo para debugging
+      this.logger.error(`[updateAgent] Error completo:`, JSON.stringify({
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        message: error.message,
+        url: error.config?.url,
+        payload: updatePayload,
+      }, null, 2));
 
       // Log adicional para debugging
       this.logger.error(`[updateAgent] Payload enviado:`, updatePayload);
       this.logger.error(`[updateAgent] Account ID: ${accountId}`);
       this.logger.error(`[updateAgent] Agent ID: ${agentId}`);
+
+      if (error.response?.status === 400) {
+        const errorDetail = error.response?.data?.detail || error.response?.data?.message || error.message;
+        this.logger.error(`[updateAgent] Error 400 específico:`, errorDetail);
+        throw new BadRequestException(
+          `Error 400 al actualizar agente en ElevenLabs: ${errorDetail}. Verifica que el agente existe y que el payload es válido.`,
+        );
+      }
+
+      if (error.response?.status === 404) {
+        throw new NotFoundException(
+          `El agente ${agentId} no existe en ElevenLabs`,
+        );
+      }
 
       throw new BadRequestException(
         `Error actualizando agente: ${error.response?.data?.message || error.message}`,
@@ -2371,18 +2456,42 @@ export class ElevenLabsService {
    */
   async getConversationDetails(accountId: string, conversationId: string) {
     try {
-      // Se requiere accountId
-      const elevenLabs = await this.getElevenLabsClient(accountId);
+      // Obtener configuración de ElevenLabs
+      const config = await this.getConfig(accountId);
+      if (!config?.apiKey) {
+        this.logger.error(
+          `No se encontró configuración para accountId: ${accountId}`,
+        );
+        return null;
+      }
 
       this.logger.log(
         `📞 [getConversationDetails] Obteniendo detalles para conversación ${conversationId}`,
       );
 
-      const response = await elevenLabs.conversations.get(conversationId);
+      // Usar API REST directa para obtener timestamps exactos
+      const response = await axios.get(
+        `https://api.elevenlabs.io/v1/convai/conversations/${conversationId}`,
+        {
+          headers: {
+            'xi-api-key': config.apiKey,
+            Accept: 'application/json',
+          },
+          timeout: 10000,
+        },
+      );
+
       this.logger.log(
         `✅ [getConversationDetails] Detalles obtenidos para conversación ${conversationId}`,
       );
-      return response;
+      
+      // Log de la estructura completa para debugging
+      this.logger.log(
+        `🔍 [getConversationDetails] Estructura completa de la respuesta:`,
+        JSON.stringify(response.data, null, 2).substring(0, 1000) + '...',
+      );
+
+      return response.data;
     } catch (error) {
       this.logger.error(
         `❌ [getConversationDetails] Error obteniendo detalles de conversación ${conversationId}:`,
@@ -3661,6 +3770,256 @@ export class ElevenLabsService {
         error.message,
       );
       return null;
+    }
+  }
+
+  /**
+   * Obtener metadatos de costos y créditos de una conversación
+   * Incluye información de duración, créditos utilizados y costos
+   */
+  async getConversationMetadata(accountId: string, conversationId: string) {
+    this.logger.log(
+      `📊 Obteniendo metadatos para conversación ${conversationId} (account: ${accountId})`,
+    );
+
+    const config = await this.getConfig(accountId);
+    if (!config?.apiKey) {
+      throw new NotFoundException(
+        `No se encontró configuración de ElevenLabs para la cuenta ${accountId}.`,
+      );
+    }
+
+    try {
+      // Obtener detalles de la conversación
+      const conversationDetails = await this.getConversationDetails(
+        accountId,
+        conversationId,
+      );
+
+      if (!conversationDetails) {
+        throw new NotFoundException(
+          `No se encontraron detalles para la conversación ${conversationId}.`,
+        );
+      }
+
+      // Log de los datos reales obtenidos de ElevenLabs
+      this.logger.log(
+        `📊 [getConversationMetadata] Datos reales de ElevenLabs:`,
+        {
+          conversationId,
+          duration: conversationDetails.duration,
+          created_at: conversationDetails.created_at,
+          status: conversationDetails.status,
+          agent_id: conversationDetails.agent_id,
+          conversation_id: conversationDetails.conversation_id,
+          fullDetails: conversationDetails
+        }
+      );
+
+      // Verificar si tenemos datos reales de costos y créditos en conversationDetails
+      if (conversationDetails.cost) {
+        this.logger.log(`💰 Costo real encontrado en conversationDetails:`, conversationDetails.cost);
+      }
+      if (conversationDetails.credits_used) {
+        this.logger.log(`🎯 Créditos reales encontrados en conversationDetails:`, conversationDetails.credits_used);
+      }
+      if (conversationDetails.tokens_used) {
+        this.logger.log(`🔤 Tokens reales encontrados en conversationDetails:`, conversationDetails.tokens_used);
+      }
+
+      // Usar datos reales de ElevenLabs en lugar de calcular estimaciones
+      const duration = conversationDetails.duration || 0;
+      const durationMinutes = duration / 60;
+      
+      // Obtener datos reales de costos y créditos de ElevenLabs
+      let realCosts = null;
+      let realCredits = null;
+      
+      try {
+        // Intentar obtener datos reales de la conversación desde la API de ElevenLabs ConvAI
+        // Usar el endpoint correcto para obtener detalles de la conversación
+        const conversationResponse = await axios.get(
+          `https://api.elevenlabs.io/v1/convai/conversations/${conversationId}/details`,
+          {
+            headers: {
+              'xi-api-key': config.apiKey,
+              'Content-Type': 'application/json',
+            },
+          }
+        );
+        
+        const conversationData = conversationResponse.data;
+        this.logger.log(`📊 Datos completos de la conversación desde ElevenLabs:`, conversationData);
+        
+        // Extraer datos reales de costos y créditos si están disponibles
+        if (conversationData.costs) {
+          realCosts = conversationData.costs;
+          this.logger.log(`💰 Costos reales obtenidos:`, realCosts);
+        }
+        
+        if (conversationData.credits) {
+          realCredits = conversationData.credits;
+          this.logger.log(`🎯 Créditos reales obtenidos:`, realCredits);
+        }
+        
+        // También verificar si hay datos de uso/usage
+        if (conversationData.usage) {
+          this.logger.log(`📈 Datos de uso obtenidos:`, conversationData.usage);
+        }
+        
+        // Verificar si hay datos de billing o costos específicos
+        if (conversationData.billing) {
+          this.logger.log(`💳 Datos de facturación obtenidos:`, conversationData.billing);
+        }
+        
+      } catch (error) {
+        this.logger.warn(`⚠️ No se pudieron obtener datos adicionales de ElevenLabs: ${error.message}`);
+        
+        // Intentar con endpoint alternativo si el primero falla
+        try {
+          const altResponse = await axios.get(
+            `https://api.elevenlabs.io/v1/convai/conversations/${conversationId}`,
+            {
+              headers: {
+                'xi-api-key': config.apiKey,
+                'Content-Type': 'application/json',
+              },
+            }
+          );
+          
+          const altData = altResponse.data;
+          this.logger.log(`📊 Datos alternativos de la conversación:`, altData);
+          
+          if (altData.costs) {
+            realCosts = altData.costs;
+            this.logger.log(`💰 Costos reales obtenidos (alternativo):`, realCosts);
+          }
+          
+          if (altData.credits) {
+            realCredits = altData.credits;
+            this.logger.log(`🎯 Créditos reales obtenidos (alternativo):`, realCredits);
+          }
+          
+        } catch (altError) {
+          this.logger.warn(`⚠️ Endpoint alternativo también falló: ${altError.message}`);
+        }
+      }
+
+      // Usar datos reales de conversationDetails si están disponibles
+      const voiceCredits = realCredits?.voice_credits || 
+                          conversationDetails.credits_used?.voice || 
+                          Math.ceil(durationMinutes * 1000);
+      const llmCredits = realCredits?.llm_credits || 
+                       conversationDetails.credits_used?.llm || 
+                       conversationDetails.tokens_used || 
+                       Math.ceil(durationMinutes * 50);
+      
+      const voiceCost = realCosts?.voice_cost || 
+                       conversationDetails.cost?.voice || 
+                       (durationMinutes * 0.00279);
+      const llmCost = realCosts?.llm_cost || 
+                     conversationDetails.cost?.llm || 
+                     (durationMinutes * 0.0001);
+      const totalCost = realCosts?.total_cost || 
+                       conversationDetails.cost?.total || 
+                       conversationDetails.cost || 
+                       (voiceCost + llmCost);
+
+      // Formatear fecha - verificar que created_at sea válido
+      let formattedDate: string;
+      if (conversationDetails.created_at) {
+        const createdAt = new Date(conversationDetails.created_at);
+        if (!isNaN(createdAt.getTime())) {
+          const now = new Date();
+          const isToday = createdAt.toDateString() === now.toDateString();
+          
+          if (isToday) {
+            formattedDate = `Hoy, ${createdAt.toLocaleTimeString('es-ES', { 
+              hour: '2-digit', 
+              minute: '2-digit' 
+            })}`;
+          } else {
+            formattedDate = createdAt.toLocaleDateString('es-ES', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit'
+            });
+          }
+        } else {
+          formattedDate = "Fecha no disponible";
+        }
+      } else {
+        formattedDate = "Fecha no disponible";
+      }
+
+      // Formatear duración
+      const formatDuration = (seconds: number) => {
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = seconds % 60;
+        return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+      };
+
+      // Usar datos reales de ElevenLabs si están disponibles
+      const metadata = {
+        // Datos reales de ElevenLabs
+        cost: realCosts?.total_cost || conversationDetails.cost || totalCost,
+        tokensUsed: realCredits?.llm_credits || conversationDetails.tokens_used || llmCredits,
+        callDuration: conversationDetails.duration || duration,
+        llmTotalCost: realCosts?.llm_cost || conversationDetails.llm_total_cost || llmCost,
+        costPerMinute: conversationDetails.cost_per_minute || (durationMinutes > 0 ? totalCost / durationMinutes : 0),
+        
+        // Datos formateados para el frontend
+        fecha: formattedDate,
+        duracionConexion: formatDuration(conversationDetails.duration || duration),
+        creditosLlamada: realCredits?.voice_credits || conversationDetails.credits_used?.voice || voiceCredits,
+        creditosLLM: realCredits?.llm_credits || conversationDetails.tokens_used || llmCredits,
+        costoLLM: {
+          porMinuto: durationMinutes > 0 ? `$${(llmCost / durationMinutes).toFixed(5)} / min` : `$${llmCost.toFixed(5)} / min`,
+          total: `$${llmCost.toFixed(3)}`
+        },
+        costoVoz: {
+          porMinuto: durationMinutes > 0 ? `$${(voiceCost / durationMinutes).toFixed(5)} / min` : `$${voiceCost.toFixed(5)} / min`,
+          total: `$${voiceCost.toFixed(3)}`
+        },
+        costoTotal: `$${totalCost.toFixed(3)}`,
+        duracionMinutos: durationMinutes,
+        estado: conversationDetails.status,
+        agenteId: conversationDetails.agent_id,
+        conversacionId: conversationDetails.conversation_id
+      };
+
+        this.logger.log(
+          `✅ Metadatos obtenidos para conversación ${conversationId}:`,
+          metadata
+        );
+
+        // Log detallado de los metadatos que se envían al frontend
+        this.logger.log(
+          `📤 [getConversationMetadata] Enviando al frontend:`,
+          {
+            fecha: metadata.fecha,
+            duracionConexion: metadata.duracionConexion,
+            creditosLlamada: metadata.creditosLlamada,
+            creditosLLM: metadata.creditosLLM,
+            costoLLM: metadata.costoLLM,
+            costoVoz: metadata.costoVoz,
+            costoTotal: metadata.costoTotal,
+            duracionMinutos: metadata.duracionMinutos,
+            estado: metadata.estado
+          }
+        );
+
+        return metadata;
+    } catch (error) {
+      this.logger.error(
+        `❌ Error obteniendo metadatos de conversación ${conversationId}:`,
+        error,
+      );
+      throw new BadRequestException(
+        `Error obteniendo metadatos de la conversación: ${error.message}`,
+      );
     }
   }
 }

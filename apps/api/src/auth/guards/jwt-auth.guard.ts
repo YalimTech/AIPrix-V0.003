@@ -31,25 +31,6 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
       );
     }
 
-    // Verificar si es el super admin
-    const adminEmail = process.env.SUPER_ADMIN_EMAIL;
-    const adminRole = process.env.SUPER_ADMIN_ROLE;
-    if (user.sub === adminEmail) {
-      // Asegurar que el super admin tenga los datos correctos
-      return {
-        ...user,
-        sub: adminEmail,
-        email: adminEmail,
-        accountId: adminEmail,
-        role: adminRole,
-        account: {
-          id: adminEmail,
-          status: 'active',
-          subscriptionPlan: adminRole,
-        },
-      };
-    }
-
     return user;
   }
 }

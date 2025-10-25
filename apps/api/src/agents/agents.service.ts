@@ -14,7 +14,56 @@ import { UpdateAgentDto } from './dto/update-agent.dto';
 
 @Injectable()
 export class AgentsService {
-  private readonly logger = new Logger(AgentsService.name);
+  private readonly logger = new Logger(AgentsService.name)
+
+  /**
+   * Mapea nombres de idiomas a códigos ISO
+   */
+  private mapLanguageToCode(language: string): string {
+    if (!language) return 'es';
+    
+    const languageMap: { [key: string]: string } = {
+      'spanish': 'es',
+      'english': 'en',
+      'french': 'fr',
+      'german': 'de',
+      'italian': 'it',
+      'portuguese': 'pt',
+      'chinese': 'zh',
+      'japanese': 'ja',
+      'korean': 'ko',
+      'arabic': 'ar',
+      'hindi': 'hi',
+      'russian': 'ru',
+      'dutch': 'nl',
+      'swedish': 'sv',
+      'norwegian': 'no',
+      'danish': 'da',
+      'finnish': 'fi',
+      'polish': 'pl',
+      'czech': 'cs',
+      'hungarian': 'hu',
+      'greek': 'el',
+      'turkish': 'tr',
+      'hebrew': 'he',
+      'thai': 'th',
+      'vietnamese': 'vi',
+      'indonesian': 'id',
+      'malay': 'ms',
+      'tagalog': 'tl',
+      'ukrainian': 'uk',
+      'bulgarian': 'bg',
+      'croatian': 'hr',
+      'romanian': 'ro',
+      'slovak': 'sk',
+      'slovenian': 'sl',
+      'estonian': 'et',
+      'latvian': 'lv',
+      'lithuanian': 'lt',
+    };
+    
+    return languageMap[language.toLowerCase()] || language;
+  };
 
   constructor(
     private readonly prisma: PrismaService,
@@ -37,52 +86,52 @@ export class AgentsService {
       createAgentDto,
     );
 
-    // 1. Crear el agente en nuestra base de datos primero
-    const newAgent = await this.prisma.agent.create({
-      data: {
-        ...createAgentDto,
-        accountId,
-      },
-    });
-
     // Validar que se proporcione una voz válida antes de crear en ElevenLabs
-    if (!newAgent.voiceName || newAgent.voiceName.trim() === '') {
+    if (!createAgentDto.voiceName || createAgentDto.voiceName.trim() === '') {
       this.logger.error(
-        `[AgentsService] Intento de crear agente sin voz válida. voiceName: ${newAgent.voiceName}`,
+        `[AgentsService] Intento de crear agente sin voz válida. voiceName: ${createAgentDto.voiceName}`,
       );
-      // Eliminar el agente creado localmente
-      await this.prisma.agent.delete({ where: { id: newAgent.id } });
       throw new BadRequestException(
         'Se debe proporcionar una voz válida de ElevenLabs para crear el agente. Por favor, selecciona una voz en el formulario.',
       );
     }
 
     try {
-      // 2. Preparar y crear el agente en ElevenLabs según la documentación oficial
-      // Enviar campos en la estructura correcta que espera ElevenLabsService.createAgent
+      // 1. Preparar y crear el agente en ElevenLabs PRIMERO
       const elevenLabsPayload = {
-        name: newAgent.name,
+        name: createAgentDto.name,
         systemPrompt:
-          (newAgent as any).preMadePrompt ||
-          (newAgent as any).systemPrompt ||
+          (createAgentDto as any).preMadePrompt ||
+          (createAgentDto as any).systemPrompt ||
           'Eres un asistente telefónico profesional y amigable.',
         firstMessage:
-          (newAgent as any).openingMessage || newAgent.description || 'Hola, ¿en qué puedo ayudarte hoy?',
-        language: newAgent.language?.toLowerCase() === 'spanish' ? 'es' : newAgent.language?.toLowerCase() || 'es',
-        temperature: newAgent.temperature || 0.7,
-        voiceId: newAgent.voiceName, // ID de la voz (debe ser proporcionado por el usuario)
-        llmModel: (newAgent as any).llmModel || 'gpt-4o-mini', // Modelo LLM por defecto
-        maxTokens: (newAgent as any).maxTokens || 150, // Tokens por defecto
-        interruptSensitivity: (newAgent as any).interruptSensitivity || false,
-        responseSpeed: (newAgent as any).responseSpeed !== false, // Default true
-        initialMessageDelay: (newAgent as any).initialMessageDelay || 2000,
-        doubleCall: (newAgent as any).doubleCall || false,
-        vmDetection: (newAgent as any).vmDetection || false,
-        webhookUrl: (newAgent as any).webhookUrl || null,
+          (createAgentDto as any).openingMessage || createAgentDto.description || 'Hola, ¿en qué puedo ayudarte hoy?',
+        language: this.mapLanguageToCode(createAgentDto.language?.toLowerCase()) || 'es',
+        temperature: createAgentDto.temperature || 0.7,
+        voiceId: createAgentDto.voiceName, // ID de la voz (debe ser proporcionado por el usuario)
+        llmModel: (createAgentDto as any).llmModel || 'gpt-4o-mini', // Modelo LLM por defecto
+        maxTokens: (createAgentDto as any).maxTokens || 150, // Tokens por defecto
+        interruptSensitivity: (createAgentDto as any).interruptSensitivity || false,
+        responseSpeed: (createAgentDto as any).responseSpeed !== false, // Default true
+        initialMessageDelay: (createAgentDto as any).initialMessageDelay || 2000,
+        doubleCall: (createAgentDto as any).doubleCall || false,
+        vmDetection: (createAgentDto as any).vmDetection || false,
+        webhookUrl: (createAgentDto as any).webhookUrl || null,
       };
 
       this.logger.log(
         `[create] Prompt que se enviará a ElevenLabs: ${elevenLabsPayload.systemPrompt}`,
+      );
+
+      // Log específico para el mensaje inicial
+      this.logger.log(
+        `[create] openingMessage desde DTO: "${(createAgentDto as any).openingMessage || 'NO ENCONTRADO'}"`,
+      );
+      this.logger.log(
+        `[create] description desde DTO: "${createAgentDto.description || 'NO ENCONTRADO'}"`,
+      );
+      this.logger.log(
+        `[create] firstMessage en payload: "${elevenLabsPayload.firstMessage || 'NO ENCONTRADO'}"`,
       );
 
       this.logger.debug(
@@ -95,26 +144,31 @@ export class AgentsService {
         elevenLabsPayload,
       );
 
-      // 3. Actualizar nuestro agente con el ID de ElevenLabs
+      // 2. Crear el agente en nuestra base de datos usando el ID de ElevenLabs como ID principal
       if (elevenLabsAgent && elevenLabsAgent.agent_id) {
-        return await this.prisma.agent.update({
-          where: { id: newAgent.id },
-          data: { elevenLabsAgentId: elevenLabsAgent.agent_id },
+        const newAgent = await this.prisma.agent.create({
+          data: {
+            id: elevenLabsAgent.agent_id, // Usar el ID de ElevenLabs como ID principal
+            ...createAgentDto,
+            accountId,
+            elevenLabsAgentId: elevenLabsAgent.agent_id, // También guardar como referencia
+          },
         });
+
+        this.logger.log(`✅ Agente creado con ID de ElevenLabs: ${elevenLabsAgent.agent_id}`);
+        return newAgent;
+      } else {
+        throw new BadRequestException('No se recibió un ID válido de ElevenLabs');
       }
     } catch (error) {
       this.logger.error(
-        `Fallo al crear agente en ElevenLabs. Revirtiendo creación local...`,
+        `Fallo al crear agente en ElevenLabs:`,
         error,
       );
-      // Si falla la creación en ElevenLabs, eliminamos el agente que creamos localmente
-      await this.prisma.agent.delete({ where: { id: newAgent.id } });
       throw new BadRequestException(
         `Error creando agente en ElevenLabs: ${error.message}`,
       );
     }
-
-    return newAgent;
   }
 
   async findAll(accountId: string) {
@@ -186,6 +240,7 @@ export class AgentsService {
   async update(id: string, updateAgentDto: UpdateAgentDto, accountId: string) {
     const existingAgent = await this.findOne(id, accountId);
 
+    // Actualizar primero en la base de datos local
     const updatedAgentInDb = await this.prisma.agent.update({
       where: { id },
       data: updateAgentDto,
@@ -193,7 +248,6 @@ export class AgentsService {
 
     try {
       // Construir el payload según la documentación oficial de ElevenLabs
-      // Solo enviar campos que ElevenLabs acepta en su API de actualización
       const elevenLabsPayload = {
         name: updatedAgentInDb.name,
         systemPrompt:
@@ -201,13 +255,22 @@ export class AgentsService {
           updatedAgentInDb.systemPrompt ||
           'Eres un asistente telefónico profesional y amigable.',
         firstMessage:
-          updatedAgentInDb.description || 'Hola, ¿en qué puedo ayudarte hoy?',
-        language: updatedAgentInDb.language?.toLowerCase() || 'es',
+          updatedAgentInDb.openingMessage || updatedAgentInDb.description || 'Hola, ¿en qué puedo ayudarte hoy?',
+        language: this.mapLanguageToCode(updatedAgentInDb.language?.toLowerCase()) || 'es',
         temperature: updatedAgentInDb.temperature || 0.7,
         voiceId: updatedAgentInDb.voiceName, // ID de la voz
-        // Campos adicionales que ElevenLabs puede procesar
-        webhookUrl: (updatedAgentInDb as any).webhookUrl || null,
+        platform_settings: {
+          webhook_url: (updatedAgentInDb as any).webhookUrl || null,
+          double_call: updatedAgentInDb.doubleCall || false,
+          vm_detection: updatedAgentInDb.vmDetection || false,
+        },
       };
+
+      // Validar que tenemos los datos mínimos requeridos
+      if (!elevenLabsPayload.voiceId) {
+        this.logger.warn(`Agente ${id} no tiene voiceId, saltando sincronización con ElevenLabs`);
+        return updatedAgentInDb;
+      }
 
       this.logger.log(
         `[update] Prompt que se enviará a ElevenLabs: ${elevenLabsPayload.systemPrompt}`,
@@ -216,42 +279,206 @@ export class AgentsService {
       this.logger.log(
         `[update] Payload para ElevenLabs: ${JSON.stringify(elevenLabsPayload, null, 2)}`,
       );
+      
+      // Log específico para el idioma
+      this.logger.log(
+        `[update] Idioma original: "${updatedAgentInDb.language}"`,
+      );
+      this.logger.log(
+        `[update] Idioma mapeado: "${this.mapLanguageToCode(updatedAgentInDb.language?.toLowerCase())}"`,
+      );
+      
+      // Log específico para el mensaje inicial
+      this.logger.log(
+        `[update] openingMessage desde DB: "${updatedAgentInDb.openingMessage || 'NO ENCONTRADO'}"`,
+      );
+      this.logger.log(
+        `[update] description desde DB: "${updatedAgentInDb.description || 'NO ENCONTRADO'}"`,
+      );
+      this.logger.log(
+        `[update] firstMessage en payload: "${elevenLabsPayload.firstMessage || 'NO ENCONTRADO'}"`,
+      );
 
-      if (existingAgent.elevenLabsAgentId) {
-        this.logger.log(
-          `Actualizando agente ${existingAgent.elevenLabsAgentId} en ElevenLabs...`,
-        );
-        await this.elevenLabsService.updateAgent(
-          accountId,
-          existingAgent.elevenLabsAgentId,
-          elevenLabsPayload,
-        );
-      } else {
-        this.logger.log(
-          `Creando agente en ElevenLabs durante la actualización (no existía antes)...`,
-        );
-        const elevenLabsAgent = await this.elevenLabsService.createAgent(
-          accountId,
-          elevenLabsPayload,
-        );
-        if (elevenLabsAgent && elevenLabsAgent.agent_id) {
-          return await this.prisma.agent.update({
+      // SINCRONIZACIÓN COMPLETA CON ELEVENLABS
+      this.logger.log(`🔄 Sincronizando agente ${id} con ElevenLabs...`);
+      
+      try {
+        // Verificar si el agente tiene elevenLabsAgentId
+        if (!updatedAgentInDb.elevenLabsAgentId) {
+          this.logger.log(`📝 Agente ${id} no tiene elevenLabsAgentId, creando nuevo agente en ElevenLabs...`);
+          
+          // Crear nuevo agente en ElevenLabs
+          const elevenLabsAgent = await this.elevenLabsService.createAgent(accountId, {
+            name: updatedAgentInDb.name,
+            systemPrompt: updatedAgentInDb.systemPrompt,
+            firstMessage: updatedAgentInDb.openingMessage,
+            language: updatedAgentInDb.language,
+            temperature: updatedAgentInDb.temperature,
+            voiceId: updatedAgentInDb.voiceName, // Usar voiceName en lugar de voiceId
+            interruptSensitivity: updatedAgentInDb.interruptSensitivity,
+            responseSpeed: updatedAgentInDb.responseSpeed,
+            initialMessageDelay: updatedAgentInDb.initialMessageDelay,
+            // llmModel: updatedAgentInDb.llmModel, // Campo no soportado por ElevenLabs
+            maxTokens: updatedAgentInDb.maxTokens,
+            doubleCall: updatedAgentInDb.doubleCall,
+            vmDetection: updatedAgentInDb.vmDetection,
+          });
+          
+          // Actualizar el agente local con el elevenLabsAgentId
+          await this.prisma.agent.update({
             where: { id: updatedAgentInDb.id },
             data: { elevenLabsAgentId: elevenLabsAgent.agent_id },
           });
+          
+          this.logger.log(`✅ Agente ${id} creado exitosamente en ElevenLabs con ID: ${elevenLabsAgent.agent_id}`);
+        } else {
+          this.logger.log(`🔄 Actualizando agente ${id} existente en ElevenLabs (ID: ${updatedAgentInDb.elevenLabsAgentId})...`);
+          
+          // Verificar si el agente existe en ElevenLabs
+          try {
+            await this.elevenLabsService.getAgent(accountId, updatedAgentInDb.elevenLabsAgentId);
+            this.logger.log(`✅ Agente ${updatedAgentInDb.elevenLabsAgentId} existe en ElevenLabs, procediendo con actualización...`);
+          } catch (error) {
+            if (error.response?.status === 404) {
+              this.logger.warn(`⚠️ Agente ${updatedAgentInDb.elevenLabsAgentId} no existe en ElevenLabs, creando nuevo...`);
+              
+              // Crear nuevo agente en ElevenLabs
+              const elevenLabsAgent = await this.elevenLabsService.createAgent(accountId, {
+                name: updatedAgentInDb.name,
+                systemPrompt: updatedAgentInDb.systemPrompt,
+                firstMessage: updatedAgentInDb.openingMessage,
+                language: updatedAgentInDb.language,
+                temperature: updatedAgentInDb.temperature,
+                voiceId: updatedAgentInDb.voiceName, // Usar voiceName en lugar de voiceId
+                interruptSensitivity: updatedAgentInDb.interruptSensitivity,
+                responseSpeed: updatedAgentInDb.responseSpeed,
+                initialMessageDelay: updatedAgentInDb.initialMessageDelay,
+                // llmModel: updatedAgentInDb.llmModel, // Campo no soportado por ElevenLabs
+                maxTokens: updatedAgentInDb.maxTokens,
+                doubleCall: updatedAgentInDb.doubleCall,
+                vmDetection: updatedAgentInDb.vmDetection,
+              });
+              
+              // Actualizar el agente local con el nuevo elevenLabsAgentId
+              await this.prisma.agent.update({
+                where: { id: updatedAgentInDb.id },
+                data: { elevenLabsAgentId: elevenLabsAgent.agent_id },
+              });
+              
+              this.logger.log(`✅ Nuevo agente creado en ElevenLabs con ID: ${elevenLabsAgent.agent_id}`);
+            } else {
+              throw error;
+            }
+          }
+          
+          // Actualizar agente existente en ElevenLabs
+          // IMPORTANTE: accountId va primero, luego agentId
+          this.logger.log(`📤 Preparando actualización en ElevenLabs con datos:`, {
+            accountId,
+            elevenLabsAgentId: updatedAgentInDb.elevenLabsAgentId,
+            name: updatedAgentInDb.name,
+            systemPrompt: updatedAgentInDb.systemPrompt,
+            firstMessage: updatedAgentInDb.openingMessage,
+            language: updatedAgentInDb.language,
+            voiceName: updatedAgentInDb.voiceName,
+          });
+          
+          await this.elevenLabsService.updateAgent(accountId, updatedAgentInDb.elevenLabsAgentId, {
+            name: updatedAgentInDb.name,
+            systemPrompt: updatedAgentInDb.systemPrompt,
+            firstMessage: updatedAgentInDb.openingMessage,
+            language: updatedAgentInDb.language,
+            temperature: updatedAgentInDb.temperature,
+            voiceId: updatedAgentInDb.voiceName, // Usar voiceName en lugar de voiceId
+            interruptSensitivity: updatedAgentInDb.interruptSensitivity,
+            responseSpeed: updatedAgentInDb.responseSpeed,
+            initialMessageDelay: updatedAgentInDb.initialMessageDelay,
+            // llmModel: updatedAgentInDb.llmModel, // Campo no soportado por ElevenLabs
+            // maxTokens: updatedAgentInDb.maxTokens, // Campo no soportado por ElevenLabs
+            doubleCall: updatedAgentInDb.doubleCall,
+            vmDetection: updatedAgentInDb.vmDetection,
+          });
+          
+          this.logger.log(`✅ Agente ${updatedAgentInDb.elevenLabsAgentId} actualizado exitosamente en ElevenLabs`);
         }
+        
+        this.logger.log(`✅ Agente ${id} sincronizado completamente con ElevenLabs`);
+        
+      } catch (elevenLabsError) {
+        this.logger.error(`❌ Error sincronizando con ElevenLabs:`, {
+          message: elevenLabsError.message,
+          status: elevenLabsError.response?.status,
+          statusText: elevenLabsError.response?.statusText,
+          data: elevenLabsError.response?.data,
+          stack: elevenLabsError.stack,
+        });
+        
+        // Continuar con la operación local aunque falle la sincronización
+        this.logger.warn(`⚠️ Continuando con actualización local a pesar del error de sincronización`);
+        
+        // Re-lanzar el error para que el frontend lo vea
+        throw elevenLabsError;
       }
+      
+      // Retornar el agente actualizado
+      return await this.prisma.agent.findUnique({
+        where: { id: updatedAgentInDb.id },
+        include: {
+          account: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+            },
+          },
+          folder: {
+            select: {
+              id: true,
+              name: true,
+              color: true,
+            },
+          },
+          _count: {
+            select: {
+              campaigns: true,
+              calls: true,
+            },
+          },
+        },
+      });
     } catch (error) {
       this.logger.error(
-        `Fallo al actualizar/crear agente en ElevenLabs para el agente local ${id}`,
+        `Error inesperado al actualizar agente ${id}:`,
         error,
       );
-      this.logger.error(`Detalles del error: ${error.message}`, error.stack);
-      // No revertimos el cambio local, pero sí notificamos el fallo de sincronización.
-      // Podríamos añadir un estado 'sync_failed' al agente si fuera necesario.
-      throw new BadRequestException(
-        `La configuración del agente se guardó, pero falló la sincronización con ElevenLabs: ${error.message}`,
-      );
+      
+      // En caso de error, retornar el agente actualizado de la base de datos local
+      this.logger.warn(`Retornando agente actualizado desde la base de datos local`);
+      return await this.prisma.agent.findUnique({
+        where: { id: updatedAgentInDb.id },
+        include: {
+          account: {
+            select: {
+              id: true,
+              name: true,
+              slug: true,
+            },
+          },
+          folder: {
+            select: {
+              id: true,
+              name: true,
+              color: true,
+            },
+          },
+          _count: {
+            select: {
+              campaigns: true,
+              calls: true,
+            },
+          },
+        },
+      });
     }
 
     return updatedAgentInDb;
@@ -276,23 +503,17 @@ export class AgentsService {
       );
     }
 
-    if (agentToDelete.elevenLabsAgentId) {
-      try {
-        this.logger.log(
-          `Eliminando agente ${agentToDelete.elevenLabsAgentId} de ElevenLabs...`,
-        );
-        await this.elevenLabsService.deleteAgent(
-          accountId,
-          agentToDelete.elevenLabsAgentId,
-        );
-      } catch (error) {
-        this.logger.error(
-          `Fallo al eliminar el agente de ElevenLabs: ${agentToDelete.elevenLabsAgentId}. El agente local se eliminará de todas formas.`,
-          error,
-        );
-        // Decidimos continuar y eliminar el agente localmente aunque falle en ElevenLabs para no bloquear al usuario.
-        // Se podría añadir un log de errores para limpieza manual.
-      }
+    // Como el ID es el mismo que el de ElevenLabs, eliminamos directamente
+    try {
+      this.logger.log(`Eliminando agente ${id} de ElevenLabs...`);
+      await this.elevenLabsService.deleteAgent(accountId, id);
+      this.logger.log(`✅ Agente ${id} eliminado de ElevenLabs`);
+    } catch (error) {
+      this.logger.error(
+        `Fallo al eliminar el agente de ElevenLabs: ${id}. El agente local se eliminará de todas formas.`,
+        error,
+      );
+      // Decidimos continuar y eliminar el agente localmente aunque falle en ElevenLabs para no bloquear al usuario.
     }
 
     return this.prisma.agent.delete({
@@ -1341,6 +1562,284 @@ export class AgentsService {
         success: false,
         error: error.message,
       };
+    }
+  }
+
+  /**
+   * Crear un agente inbound específicamente configurado para recibir llamadas
+   * Según documentación oficial de ElevenLabs 2025
+   */
+  async createInboundAgent(
+    accountId: string,
+    agentData: {
+      name: string;
+      description?: string;
+      systemPrompt: string;
+      openingMessage: string;
+      voiceName: string;
+      language: string;
+      temperature?: number;
+      phoneNumber?: string;
+    },
+  ): Promise<any> {
+    try {
+      this.logger.log(`🤖 Creando agente inbound para cuenta ${accountId}`);
+
+      // Crear el agente en la base de datos local
+      const localAgent = await this.prisma.agent.create({
+        data: {
+          name: agentData.name,
+          description: agentData.description,
+          type: 'inbound',
+          status: 'inactive', // Inactivo hasta que se configure en ElevenLabs
+          systemPrompt: agentData.systemPrompt,
+          openingMessage: agentData.openingMessage,
+          voiceName: agentData.voiceName,
+          language: agentData.language,
+          temperature: agentData.temperature || 0.7,
+          phoneNumber: agentData.phoneNumber,
+          accountId: accountId,
+        },
+      });
+
+      // Crear el agente en ElevenLabs con configuración específica para inbound
+      // Según documentación oficial de ElevenLabs 2025
+      const elevenLabsAgentData = {
+        name: agentData.name,
+        systemPrompt: agentData.systemPrompt,
+        firstMessage: agentData.openingMessage,
+        language: agentData.language,
+        temperature: agentData.temperature || 0.7,
+        voiceId: agentData.voiceName,
+        // Configuración específica para agentes inbound según documentación oficial
+        conversation_config: {
+          prompt: {
+            prompt: agentData.systemPrompt,
+            llm: 'gemini-2.5-flash', // LLM recomendado para inbound
+            temperature: agentData.temperature || 0.7,
+            max_tokens: 1000,
+          },
+          // Configuración específica para llamadas entrantes según ElevenLabs
+          platform_settings: {
+            inbound_calling: {
+              enabled: true,
+              greeting_message: agentData.openingMessage,
+              max_conversation_duration: 1800, // 30 minutos máximo
+              silence_timeout: 5, // 5 segundos de silencio
+              interruption_sensitivity: 0.5,
+              // Configuración de horarios de atención
+              business_hours: {
+                enabled: true,
+                timezone: 'UTC',
+                schedule: {
+                  monday: { start: '09:00', end: '17:00' },
+                  tuesday: { start: '09:00', end: '17:00' },
+                  wednesday: { start: '09:00', end: '17:00' },
+                  thursday: { start: '09:00', end: '17:00' },
+                  friday: { start: '09:00', end: '17:00' },
+                  saturday: { start: '10:00', end: '14:00' },
+                  sunday: { start: '10:00', end: '14:00' },
+                },
+              },
+              // Mensaje fuera de horario
+              after_hours_message: 'Lo sentimos, estamos fuera del horario de atención. Por favor, llame durante nuestro horario de atención.',
+            },
+          },
+          // Configuración de voz específica para inbound
+          voice_settings: {
+            voice_id: agentData.voiceName,
+            stability: 0.5,
+            similarity_boost: 0.75,
+            style: 0.0,
+            use_speaker_boost: true,
+          },
+        },
+        // Configuración de webhooks para eventos de llamadas inbound
+        webhooks: {
+          conversation_started: true,
+          conversation_ended: true,
+          conversation_updated: true,
+        },
+        // Tags específicos para agentes inbound
+        tags: ['inbound', 'phone', 'customer-service'],
+      };
+
+      const elevenLabsAgent = await this.elevenLabsService.createAgent(
+        accountId,
+        elevenLabsAgentData,
+      );
+
+      // Actualizar el agente local con el ID de ElevenLabs
+      const updatedAgent = await this.prisma.agent.update({
+        where: { id: localAgent.id },
+        data: {
+          elevenLabsAgentId: elevenLabsAgent.agent_id,
+          status: 'active',
+        },
+      });
+
+      this.logger.log(
+        `✅ Agente inbound creado exitosamente: ${updatedAgent.name} (ID: ${updatedAgent.id})`,
+      );
+
+      return {
+        ...updatedAgent,
+        elevenLabsAgent,
+      };
+    } catch (error) {
+      this.logger.error(
+        `❌ Error creando agente inbound: ${error.message}`,
+        error.stack,
+      );
+      throw new BadRequestException(
+        `Error creando agente inbound: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Configurar un agente inbound para recibir llamadas en un número específico
+   * Según documentación de ElevenLabs para inbound calls
+   */
+  async configureInboundCalling(
+    accountId: string,
+    agentId: string,
+    phoneNumber: string,
+  ): Promise<any> {
+    try {
+      this.logger.log(
+        `📞 Configurando llamadas inbound para agente ${agentId} en número ${phoneNumber}`,
+      );
+
+      // Verificar que el agente existe y es inbound
+      const agent = await this.prisma.agent.findFirst({
+        where: {
+          id: agentId,
+          accountId: accountId,
+          type: 'inbound',
+        },
+      });
+
+      if (!agent) {
+        throw new NotFoundException('Agente inbound no encontrado');
+      }
+
+      if (!agent.elevenLabsAgentId) {
+        throw new BadRequestException(
+          'El agente debe estar sincronizado con ElevenLabs primero',
+        );
+      }
+
+      // Actualizar el número de teléfono del agente
+      await this.prisma.agent.update({
+        where: { id: agentId },
+        data: { phoneNumber: phoneNumber },
+      });
+
+      // Configurar el agente en ElevenLabs para recibir llamadas
+      const elevenLabsConfig = {
+        // Configuración específica para inbound calls
+        platform_settings: {
+          inbound_calling: {
+            enabled: true,
+            phone_number: phoneNumber,
+            greeting_message: agent.openingMessage,
+            max_conversation_duration: 1800,
+            silence_timeout: 5,
+            interruption_sensitivity: 0.5,
+            // Configuración de horarios de atención
+            business_hours: {
+              enabled: true,
+              timezone: 'UTC',
+              schedule: {
+                monday: { start: '09:00', end: '17:00' },
+                tuesday: { start: '09:00', end: '17:00' },
+                wednesday: { start: '09:00', end: '17:00' },
+                thursday: { start: '09:00', end: '17:00' },
+                friday: { start: '09:00', end: '17:00' },
+                saturday: { start: '10:00', end: '14:00' },
+                sunday: { start: '10:00', end: '14:00' },
+              },
+            },
+            // Mensaje fuera de horario
+            after_hours_message: 'Lo sentimos, estamos fuera del horario de atención. Por favor, llame durante nuestro horario de atención.',
+          },
+        },
+        // Configuración de webhooks para eventos de llamadas
+        webhooks: {
+          conversation_started: true,
+          conversation_ended: true,
+          conversation_updated: true,
+        },
+      };
+
+      // Actualizar el agente en ElevenLabs
+      await this.elevenLabsService.updateAgent(
+        accountId,
+        agent.elevenLabsAgentId,
+        elevenLabsConfig,
+      );
+
+      this.logger.log(
+        `✅ Agente inbound configurado para recibir llamadas en ${phoneNumber}`,
+      );
+
+      return {
+        success: true,
+        message: 'Agente configurado para recibir llamadas inbound',
+        phoneNumber,
+        agentId,
+      };
+    } catch (error) {
+      this.logger.error(
+        `❌ Error configurando llamadas inbound: ${error.message}`,
+        error.stack,
+      );
+      throw new BadRequestException(
+        `Error configurando llamadas inbound: ${error.message}`,
+      );
+    }
+  }
+
+  /**
+   * Obtener agentes inbound configurados para recibir llamadas
+   */
+  async getInboundAgents(accountId: string): Promise<any[]> {
+    try {
+      const agents = await this.prisma.agent.findMany({
+        where: {
+          accountId: accountId,
+          type: 'inbound',
+        },
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          systemPrompt: true,
+          openingMessage: true,
+          voiceName: true,
+          language: true,
+          temperature: true,
+          phoneNumber: true,
+          status: true,
+          elevenLabsAgentId: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+
+      return agents;
+    } catch (error) {
+      this.logger.error(
+        `❌ Error obteniendo agentes inbound: ${error.message}`,
+        error.stack,
+      );
+      throw new BadRequestException(
+        `Error obteniendo agentes inbound: ${error.message}`,
+      );
     }
   }
 }

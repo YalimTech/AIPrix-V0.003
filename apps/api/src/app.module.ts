@@ -22,6 +22,12 @@ import { FoldersModule } from './folders/folders.module';
 import { HealthModule } from './health/health.module';
 import { IntegrationsModule } from './integrations/integrations.module';
 import { TwilioMarketplaceModule } from './integrations/twilio/twilio-marketplace.module';
+import { ExternalWebhookService } from './services/external-webhook.service';
+import { ExternalWebhookController } from './controllers/external-webhook.controller';
+import { PhoneAssignmentService } from './services/phone-assignment.service';
+import { PhoneAssignmentController } from './controllers/phone-assignment.controller';
+import { TwilioInboundService } from './services/twilio-inbound.service';
+import { TwilioInboundController, TwilioWebhookController } from './controllers/twilio-inbound.controller';
 import { KnowledgeModule } from './knowledge/knowledge.module';
 // import { LLMModule } from './llm/llm.module';
 import { LoggingModule } from './logging/logging.module';
@@ -85,7 +91,7 @@ import { WebSocketModule } from './websocket/websocket.module';
     WebhooksModule,
     AudioProcessingModule,
     CampaignsModule,
-    // ContactsModule,
+    ContactsModule,
     CallsModule,
     KnowledgeModule,
     DashboardModule,
@@ -100,8 +106,8 @@ import { WebSocketModule } from './websocket/websocket.module';
     AdminModule,
     BillingModule,
   ],
-  controllers: [AppController, SimpleHealthController],
-  providers: [AppService, ErrorHandlerInterceptor],
+  controllers: [AppController, SimpleHealthController, ExternalWebhookController, PhoneAssignmentController, TwilioInboundController, TwilioWebhookController],
+  providers: [AppService, ErrorHandlerInterceptor, ExternalWebhookService, PhoneAssignmentService, TwilioInboundService],
 })
 export class AppModule implements NestModule {
   /**

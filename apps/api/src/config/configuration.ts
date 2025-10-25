@@ -115,10 +115,10 @@ function getThrottlerConfig() {
  */
 function getAdminConfig() {
   return {
-    email: cleanEnvVar(process.env.SUPER_ADMIN_EMAIL),
-    password: cleanEnvVar(process.env.SUPER_ADMIN_PASSWORD),
-    name: cleanEnvVar(process.env.SUPER_ADMIN_NAME),
-    role: cleanEnvVar(process.env.SUPER_ADMIN_ROLE),
-    secretKey: cleanEnvVar(process.env.SUPER_ADMIN_SECRET_KEY),
+    email: '',
+    password: '',
+    name: '',
+    role: '',
+    secretKey: '',
   };
 }

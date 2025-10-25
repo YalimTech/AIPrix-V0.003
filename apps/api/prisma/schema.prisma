@@ -93,6 +93,7 @@ model Agent {
   interruptSensitivity      Boolean    @default(false)
   responseSpeed             Boolean    @default(true)
   webhookUrl                String?
+  phoneNumber               String?
   callTransferType          String?
   callTransferPhoneNumber   String?
   callTransferKeywords      String[]   @default([])

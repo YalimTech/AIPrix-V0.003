@@ -103,7 +103,7 @@ export class TwilioMarketplaceService {
    */
   async getTwilioConfig(accountId: string) {
     // Si es el super administrador, usar credenciales del .env o buscar en la base de datos
-    const adminEmail = process.env.SUPER_ADMIN_EMAIL;
+    const adminEmail = '';
     if (accountId === adminEmail) {
       // Primero intentar obtener credenciales del .env
       const accountSid = process.env.TWILIO_ACCOUNT_SID;
@@ -509,7 +509,7 @@ export class TwilioMarketplaceService {
   ): Promise<TwilioPurchasedPhoneNumber[]> {
     try {
       // Verificar si es el super admin
-      const adminEmail = process.env.SUPER_ADMIN_EMAIL;
+      const adminEmail = '';
       if (accountId === adminEmail) {
         this.logger.log(
           `Super admin accediendo a números comprados. Retornando lista vacía ya que no tiene configuración de Twilio.`,

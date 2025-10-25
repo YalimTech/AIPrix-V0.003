@@ -18,40 +18,6 @@ export class AuthenticationController {
       
       const normalizedEmail = body.email.trim().toLowerCase();
       
-      // Verificar super admin primero
-      const adminEmail = this.configService.get<string>('SUPER_ADMIN_EMAIL');
-      const adminPassword = this.configService.get<string>('SUPER_ADMIN_PASSWORD');
-      
-      if (normalizedEmail === adminEmail && body.password === adminPassword) {
-        console.log(`✅ Super admin login successful for: ${normalizedEmail}`);
-        
-        const payload = {
-          sub: normalizedEmail,
-          email: normalizedEmail,
-          accountId: 'super_admin_account',
-          role: 'super_admin',
-        };
-        
-        const accessToken = this.jwtService.sign(payload);
-        
-        return {
-          access_token: accessToken,
-          user: {
-            id: normalizedEmail,
-            email: normalizedEmail,
-            accountId: 'super_admin_account',
-            firstName: 'Super',
-            lastName: 'Admin',
-            role: 'super_admin',
-            account: {
-              id: 'super_admin_account',
-              name: 'Super Admin Account',
-              slug: 'super-admin',
-            },
-          }
-        };
-      }
-      
       // Buscar usuario en la base de datos
       const user = await this.prisma.user.findFirst({
         where: { email: normalizedEmail },

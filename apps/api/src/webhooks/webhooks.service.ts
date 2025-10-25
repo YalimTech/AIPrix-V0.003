@@ -3,6 +3,7 @@ import { ConversationOrchestratorService } from '../conversation/conversation-or
 import { ElevenLabsService } from '../integrations/elevenlabs/elevenlabs.service';
 import { TwilioService } from '../integrations/twilio/twilio.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { ExternalWebhookService } from '../services/external-webhook.service';
 
 @Injectable()
 export class WebhooksService {
@@ -13,6 +14,7 @@ export class WebhooksService {
     private readonly elevenLabsService: ElevenLabsService,
     private readonly prisma: PrismaService,
     private readonly conversationOrchestrator: ConversationOrchestratorService,
+    private readonly externalWebhookService: ExternalWebhookService,
   ) {}
 
   async processTwilioVoiceWebhook(webhookData: any) {
@@ -21,85 +23,104 @@ export class WebhooksService {
 
       const callSid = webhookData.CallSid;
       const speechResult = webhookData.SpeechResult;
-      // const _callStatus = webhookData.CallStatus;
+      const callStatus = webhookData.CallStatus;
+      const fromNumber = webhookData.From;
+      const toNumber = webhookData.To;
 
-      // Buscar la llamada en la base de datos
-      const call = await this.prisma.call.findFirst({
-        where: {
-          notes: {
-            contains: webhookData.CallSid,
-            equals: callSid,
+      // Para llamadas inbound, buscar el agente por el número de teléfono
+      let agent = null;
+      let call = null;
+
+      if (toNumber) {
+        // Buscar agente por número de teléfono asignado
+        agent = await this.prisma.agent.findFirst({
+          where: {
+            phoneNumber: toNumber,
+            type: 'inbound',
           },
-        },
-        include: {
-          agent: true,
-          account: true,
-        },
-      });
+          include: {
+            account: true,
+          },
+        });
 
-      if (!call) {
-        this.logger.warn(`Llamada no encontrada: ${callSid}`);
-        return this.generateBasicTwiML(
-          'No se pudo encontrar la información de la llamada.',
-        );
-      }
-
-      // Si hay resultado de voz, procesarlo con agente de conversación de ElevenLabs
-      if (speechResult && call.agentId) {
-        try {
-          // Obtener configuración del agente desde la base de datos
-          const agent = await this.prisma.agent.findFirst({
-            where: { id: call.agentId, accountId: call.accountId },
+        if (agent) {
+          this.logger.log(`Agente encontrado para número ${toNumber}: ${agent.name}`);
+          
+          // Crear registro de llamada si no existe
+          call = await this.prisma.call.findFirst({
+            where: {
+              notes: {
+                contains: callSid,
+              },
+            },
           });
 
-          if (!agent) {
-            throw new Error('Agente no encontrado');
-          }
-
-          // Verificar si el agente tiene un ElevenLabs Agent ID configurado
-          if (agent.elevenLabsAgentId) {
-            // Para llamadas inbound, necesitamos conectar la llamada con el agente de ElevenLabs
-            // El agente ya debe tener un número de teléfono asignado que maneja automáticamente las llamadas
-
-            this.logger.log(
-              `Conectando llamada inbound al agente de ElevenLabs: ${agent.elevenLabsAgentId}`,
-            );
-
-            // Actualizar la llamada con la información del agente
-            await this.prisma.call.update({
-              where: { id: call.id },
+          if (!call) {
+            call = await this.prisma.call.create({
               data: {
-                transcript:
-                  speechResult || 'Llamada conectada con agente de IA',
+                accountId: agent.accountId,
+                agentId: agent.id,
+                direction: 'inbound',
+                status: callStatus || 'in-progress',
+                phoneNumber: fromNumber,
                 notes: JSON.stringify({
-                  agentId: agent.elevenLabsAgentId,
-                  type: 'elevenlabs_agent',
+                  callSid: callSid,
+                  fromNumber: fromNumber,
+                  toNumber: toNumber,
                   timestamp: new Date().toISOString(),
                 }),
               },
             });
-
-            // Generar TwiML que transfiere la llamada al webhook de ElevenLabs
-            // ElevenLabs maneja automáticamente la conversación cuando Twilio conecta
-            return this.generateElevenLabsInboundTwiML(agent, call);
-          } else {
-            this.logger.error(
-              `El agente ${call.agentId} no tiene un elevenLabsAgentId configurado. No se puede proceder con la llamada.`,
-            );
-            return this.generateBasicTwiML(
-              'Lo siento, este número no está configurado correctamente para recibir llamadas.',
-            );
+            this.logger.log(`Nueva llamada inbound creada: ${call.id}`);
           }
-        } catch (error) {
-          this.logger.error('Error procesando respuesta de agente:', error);
-          return this.generateBasicTwiML(
-            'Lo siento, no pude procesar tu solicitud en este momento.',
-          );
         }
       }
 
-      // Si no hay resultado de voz, pedir al usuario que hable
-      return this.generateBasicTwiML('Por favor, dime cómo puedo ayudarte.');
+      if (!agent) {
+        this.logger.warn(`No se encontró agente para número ${toNumber}`);
+        return this.generateBasicTwiML(
+          'Lo siento, este número no está configurado para recibir llamadas.',
+        );
+      }
+
+      // Verificar si el agente tiene un ElevenLabs Agent ID configurado
+      if (agent.elevenLabsAgentId) {
+        this.logger.log(
+          `Conectando llamada inbound al agente de ElevenLabs: ${agent.elevenLabsAgentId}`,
+        );
+
+        // Actualizar la llamada con la información del agente
+        if (call) {
+          await this.prisma.call.update({
+            where: { id: call.id },
+            data: {
+              transcript: speechResult || 'Llamada conectada con agente de IA',
+              notes: JSON.stringify({
+                agentId: agent.elevenLabsAgentId,
+                type: 'elevenlabs_agent',
+                timestamp: new Date().toISOString(),
+                callSid: callSid,
+                fromNumber: fromNumber,
+                toNumber: toNumber,
+              }),
+            },
+          });
+        }
+
+        // Generar TwiML que conecta la llamada con ElevenLabs
+        return this.generateElevenLabsInboundTwiML(agent, {
+          callSid: callSid,
+          fromNumber: fromNumber,
+          toNumber: toNumber,
+        });
+      } else {
+        this.logger.error(
+          `El agente ${agent.id} no tiene un elevenLabsAgentId configurado. No se puede proceder con la llamada.`,
+        );
+        return this.generateBasicTwiML(
+          'Lo siento, este número no está configurado correctamente para recibir llamadas.',
+        );
+      }
     } catch (error) {
       this.logger.error('Error procesando webhook de voz:', error);
       return this.generateBasicTwiML(
@@ -220,21 +241,30 @@ export class WebhooksService {
   }
 
   /**
-   * Genera TwiML para llamadas inbound que conecta directamente con el webhook de ElevenLabs
-   * Esto permite que ElevenLabs maneje automáticamente la llamada entrante
+   * Genera TwiML para llamadas inbound que conecta directamente con ElevenLabs
+   * Según documentación oficial de ElevenLabs Conversational AI
    */
-  private generateElevenLabsInboundTwiML(agent: any, _call: any): string {
-    // Para llamadas inbound, ElevenLabs tiene su propio webhook de Twilio
-    // que maneja automáticamente la conexión cuando el agente tiene un número asignado
-    const elevenLabsWebhookUrl = `https://api.elevenlabs.io/v1/convai/webhook/twilio`;
+  private generateElevenLabsInboundTwiML(agent: any, call: any): string {
+    // Para llamadas inbound, ElevenLabs requiere un webhook específico
+    // que incluya los parámetros del agente y la llamada
+    const webhookUrl = `${process.env.API_BASE_URL || 'https://api.prixcenter.com'}/webhooks/elevenlabs/conversation-initiation`;
+    
+    // Parámetros requeridos por ElevenLabs según documentación oficial
+    const params = new URLSearchParams({
+      caller_id: call.fromNumber || 'unknown',
+      agent_id: agent.elevenLabsAgentId,
+      called_number: call.toNumber || agent.phoneNumber,
+      call_sid: call.callSid || 'unknown'
+    });
 
     this.logger.log(
-      `Redirigiendo llamada inbound a ElevenLabs para agente: ${agent.elevenLabsAgentId}`,
+      `Conectando llamada inbound a ElevenLabs para agente: ${agent.elevenLabsAgentId}`,
     );
 
+    // TwiML que redirige a nuestro webhook de ElevenLabs con los parámetros necesarios
     return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Redirect method="POST">${elevenLabsWebhookUrl}</Redirect>
+    <Redirect method="POST">${webhookUrl}?${params.toString()}</Redirect>
 </Response>`;
   }
 
@@ -269,14 +299,29 @@ export class WebhooksService {
   }
 
   private async handleElevenLabsConversationStarted(webhookData: any) {
-    const { conversation_id, account_id, _agent_id, _call_id } = webhookData;
+    const { conversation_id, account_id, agent_id, call_id, from_number, to_number, direction } = webhookData;
 
     this.logger.log(
       `Conversación ElevenLabs iniciada: ${conversation_id} para cliente: ${account_id}`,
     );
 
-    // El tracking del inicio ya se hace en startConversation
-    // Aquí solo logueamos el evento
+    // Enviar webhook externo de inicio de conversación
+    try {
+      await this.externalWebhookService.sendConversationStartedWebhook(
+        account_id,
+        agent_id,
+        {
+          conversation_id,
+          phone_number: from_number || to_number || 'unknown',
+          direction: direction || 'inbound',
+        },
+      );
+    } catch (webhookError) {
+      this.logger.error(
+        `Error enviando webhook de inicio para conversación ${conversation_id}:`,
+        webhookError,
+      );
+    }
   }
 
   private async handleElevenLabsConversationEnded(webhookData: any) {
@@ -429,6 +474,31 @@ export class WebhooksService {
       this.logger.log(
         `✅ Información de llamada guardada exitosamente para conversación ${conversation_id}`,
       );
+
+      // 7. Enviar webhook externo si está configurado
+      try {
+        await this.externalWebhookService.sendConversationEndedWebhook(
+          account_id,
+          agent.id,
+          {
+            conversation_id,
+            duration: duration || 0,
+            transcript: conversationDetails?.transcript || transcript || null,
+            recording_url: conversationDetails?.recording_url || recording_url || null,
+            tokens_used: tokens_used || 0,
+            cost: cost || 0,
+            phone_number: from_number || to_number || 'unknown',
+            direction: callDirection,
+            status: outcome as 'completed' | 'failed' | 'no_answer',
+          },
+        );
+      } catch (webhookError) {
+        this.logger.error(
+          `Error enviando webhook externo para conversación ${conversation_id}:`,
+          webhookError,
+        );
+        // No lanzar error para no interrumpir el flujo principal
+      }
     } catch (error) {
       this.logger.error(
         `Error guardando información de llamada: ${error.message}`,
